@@ -1,74 +1,106 @@
-const axios = require('axios')
+// ─────────────────────────────────────────────
+//  Plantillas de mensajes para cada evento
+// ─────────────────────────────────────────────
 
-const shopify = axios.create({
-  baseURL: `https://${process.env.SHOPIFY_STORE}/admin/api/2024-01`,
-  headers: {
-    'X-Shopify-Access-Token': process.env.SHOPIFY_ACCESS_TOKEN,
-    'Content-Type': 'application/json',
-  },
-})
+function msgPedidoNuevo(order) {
+  const items = order.line_items
+    .map(i => `  • ${i.name} x${i.quantity}`)
+    .join('\n')
 
-// Obtener pedidos del día de hoy
-async function getPedidosHoy() {
-  const hoy = new Date()
-  hoy.setHours(0, 0, 0, 0)
+  return `🛍️ *¡Pedido confirmado!*
 
-  const res = await shopify.get('/orders.json', {
-    params: {
-      created_at_min: hoy.toISOString(),
-      status: 'any',
-      limit: 250,
-    },
+Hola *${order.billing_address?.first_name || 'Cliente'}*, tu pedido llegó con éxito.
+
+📋 *Pedido:* #${order.order_number}
+${items}
+
+💰 *Total:* $${Number(order.total_price).toLocaleString('es-CO')} COP
+
+Te avisamos en cuanto sea despachado. ¡Gracias por tu compra! 🎉`
+}
+
+function msgPagoConfirmado(order) {
+  return `✅ *Pago recibido*
+
+Hola *${order.billing_address?.first_name || 'Cliente'}*, confirmamos el pago de tu pedido *#${order.order_number}*.
+
+💳 Total pagado: *$${Number(order.total_price).toLocaleString('es-CO')} COP*
+
+Ya estamos preparando tu paquete 📦. En breve recibirás el número de guía.`
+}
+
+function msgEnvioDespachado(order, tracking) {
+  return `🚚 *¡Tu pedido va en camino!*
+
+Hola *${order.billing_address?.first_name || 'Cliente'}*, el pedido *#${order.order_number}* fue despachado hoy.
+
+📍 *Guía:* ${tracking.number || 'En proceso'}
+🏢 *Transportadora:* ${tracking.company || 'Por confirmar'}
+🕐 *Entrega estimada:* 2–4 días hábiles
+
+${tracking.url ? `Rastrea tu paquete aquí 👉 ${tracking.url}` : ''}
+
+¿Tienes alguna pregunta? Responde este mensaje y te ayudamos.`
+}
+
+function msgCarritoAbandonado(checkout, intento) {
+  const items = checkout.line_items
+    ?.map(i => `  • ${i.title}`)
+    .join('\n') || '  • Productos seleccionados'
+
+  const extras = intento === 2
+    ? '\n\n🎁 *Envío gratis* si completas tu compra en las próximas 2 horas.'
+    : ''
+
+  return `👀 *¿Olvidaste algo?*
+
+Hola *${checkout.billing_address?.first_name || 'amigo/a'}*, dejaste estos productos en tu carrito:
+
+${items}${extras}
+
+¿Quieres completarla? 👇
+${checkout.abandoned_checkout_url}`
+}
+
+function msgPostventa(order) {
+  return `⭐ *¿Cómo te fue con tu pedido?*
+
+Hola *${order.billing_address?.first_name || 'Cliente'}*, esperamos que hayas recibido tu pedido *#${order.order_number}* en perfectas condiciones.
+
+Nos ayudaría mucho si nos dejas una reseña rápida. Solo toma 1 minuto 🙏
+
+👉 [Dejar reseña aquí]
+
+¡Gracias por confiar en nosotros! 💛`
+}
+
+function msgReporteDiario(stats) {
+  const fecha = new Date().toLocaleDateString('es-CO', {
+    weekday: 'long', day: 'numeric', month: 'long'
   })
-  return res.data.orders
+
+  const roasEmoji = stats.roas >= 3 ? '🟢' : stats.roas >= 2 ? '🟡' : '🔴'
+
+  return `📊 *Reporte del día — ${fecha}*
+
+💰 *Ventas totales:* $${stats.ventas.toLocaleString('es-CO')} COP
+📦 *Pedidos:* ${stats.pedidos}
+🛒 *Ticket promedio:* $${stats.ticketPromedio.toLocaleString('es-CO')} COP
+${roasEmoji} *ROAS Meta:* ${stats.roas}x
+💸 *Gasto en ads:* $${stats.gastoAds.toLocaleString('es-CO')} COP
+👥 *Clientes nuevos:* ${stats.clientesNuevos}
+
+${stats.roas < 2 ? '⚠️ *Alerta:* ROAS por debajo de 2x — revisar campañas.' : ''}
+${stats.pedidos > stats.pedidosAyer ? `📈 +${stats.pedidos - stats.pedidosAyer} pedidos vs ayer` : `📉 ${stats.pedidosAyer - stats.pedidos} pedidos menos que ayer`}
+
+👉 Dashboard: ${process.env.DASHBOARD_URL || 'dashboard.mitienda.com'}`
 }
 
-// Obtener un pedido por ID
-async function getPedido(orderId) {
-  const res = await shopify.get(`/orders/${orderId}.json`)
-  return res.data.order
+module.exports = {
+  msgPedidoNuevo,
+  msgPagoConfirmado,
+  msgEnvioDespachado,
+  msgCarritoAbandonado,
+  msgPostventa,
+  msgReporteDiario,
 }
-
-// Obtener clientes con su teléfono
-async function getClientes(limit = 250) {
-  const res = await shopify.get('/customers.json', {
-    params: { limit },
-  })
-  return res.data.customers
-}
-
-// Número de teléfono limpio para WhatsApp
-function limpiarTelefono(phone) {
-  if (!phone) return null
-  let p = phone.replace(/\D/g, '')
-  // Agregar código Colombia si no tiene código país
-  if (p.length === 10 && p.startsWith('3')) p = '57' + p
-  return p
-}
-
-// Stats consolidados del día para el reporte
-async function getStatsHoy() {
-  const pedidos = await getPedidosHoy()
-
-  const pedidosPagados = pedidos.filter(o => o.financial_status === 'paid')
-  const ventas = pedidosPagados.reduce((sum, o) => sum + parseFloat(o.total_price), 0)
-  const ticketPromedio = pedidosPagados.length > 0 ? ventas / pedidosPagados.length : 0
-
-  // Clientes nuevos hoy
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
-  const clientesNuevos = pedidos.filter(o => {
-    return o.customer?.orders_count === 1
-  }).length
-
-  return {
-    ventas: Math.round(ventas),
-    pedidos: pedidosPagados.length,
-    ticketPromedio: Math.round(ticketPromedio),
-    clientesNuevos,
-    roas: 0,        // Se completa desde Make con datos de Meta
-    gastoAds: 0,    // Se completa desde Make con datos de Meta
-    pedidosAyer: 0, // Se completa comparando con día anterior
-  }
-}
-
-module.exports = { getPedidosHoy, getPedido, getClientes, limpiarTelefono, getStatsHoy }
