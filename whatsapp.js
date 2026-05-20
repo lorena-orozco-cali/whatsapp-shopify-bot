@@ -1,22 +1,26 @@
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const pino = require('pino')
 const path = require('path')
-const { handleMessage } = require('./index')
 
 let sock = null
 let qrCode = null
 let connectionStatus = 'disconnected'
+let messageHandler = null
 const logger = pino({ level: 'silent' })
 
+// Registrar el handler desde afuera (lo pasa index.js)
+function setMessageHandler(fn) {
+  messageHandler = fn
+}
+
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, '../sessions'))
+  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'sessions'))
   const { version } = await fetchLatestBaileysVersion()
 
   sock = makeWASocket({
     version,
     logger,
     auth: state,
-    printQRInTerminal: true,
     browser: ['BlockBagBot', 'Chrome', '120.0.0'],
     connectTimeoutMs: 60000,
     defaultQueryTimeoutMs: 60000,
@@ -49,14 +53,10 @@ async function connectToWhatsApp() {
     }
   })
 
-  // ── Manejador de mensajes entrantes ─────────────────────────────────────
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
-
     for (const msg of messages) {
-      // Ignorar mensajes propios y de grupos
       if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us')) continue
-
       const jid = msg.key.remoteJid
       const texto = msg.message?.conversation
         || msg.message?.extendedTextMessage?.text
@@ -66,9 +66,8 @@ async function connectToWhatsApp() {
         msg.message?.documentMessage ||
         msg.message?.videoMessage
       )
-
       try {
-        await handleMessage(jid, texto, hasMedia)
+        if (messageHandler) await messageHandler(jid, texto, hasMedia)
       } catch (e) {
         console.error('Error manejando mensaje:', e.message)
       }
@@ -78,30 +77,19 @@ async function connectToWhatsApp() {
   return sock
 }
 
-// Enviar mensaje de texto
 async function sendMessage(jid, text) {
-  if (!sock || connectionStatus !== 'connected') {
-    console.error('WhatsApp no conectado — no se pudo enviar a', jid)
-    return
-  }
+  if (!sock || connectionStatus !== 'connected') return
   await sock.sendMessage(jid, { text })
-  console.log(`📤 Texto enviado a ${jid}`)
+  console.log(`📤 Mensaje enviado a ${jid}`)
 }
 
-// Enviar imagen con caption (para medidas, personalización y pagos)
 async function sendImage(jid, imageUrl, caption) {
-  if (!sock || connectionStatus !== 'connected') {
-    console.error('WhatsApp no conectado — no se pudo enviar imagen a', jid)
-    return
-  }
+  if (!sock || connectionStatus !== 'connected') return
   try {
-    await sock.sendMessage(jid, {
-      image: { url: imageUrl },
-      caption: caption || '',
-    })
+    await sock.sendMessage(jid, { image: { url: imageUrl }, caption: caption || '' })
     console.log(`🖼️ Imagen enviada a ${jid}`)
   } catch (err) {
-    console.error('Error enviando imagen, enviando solo texto:', err.message)
+    console.error('Error enviando imagen:', err.message)
     await sock.sendMessage(jid, { text: caption || '' })
   }
 }
@@ -110,4 +98,4 @@ function getStatus() {
   return { status: connectionStatus, qr: qrCode }
 }
 
-module.exports = { connectToWhatsApp, sendMessage, sendImage, getStatus }
+module.exports = { connectToWhatsApp, sendMessage, sendImage, getStatus, setMessageHandler }
