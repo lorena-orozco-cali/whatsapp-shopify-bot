@@ -5,7 +5,7 @@ const cron = require('node-cron')
 const crypto = require('crypto')
 const axios = require('axios')
 
-const { connectToWhatsApp, sendMessage, sendImage, getStatus } = require('./whatsapp')
+const { connectToWhatsApp, sendMessage, sendImage, getStatus, setMessageHandler } = require('./whatsapp')
 const {
   msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
   msgCarritoAbandonado, msgPostventa, msgReporteDiario,
@@ -206,8 +206,6 @@ async function handleMessage(jid, texto, hasMedia) {
 }
 
 // ─── Exportar manejador para whatsapp.js ──────────────────────────────────────
-module.exports.handleMessage = handleMessage
-
 // ─── Verificaciones ───────────────────────────────────────────────────────────
 function verificarShopify(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256']
@@ -340,5 +338,6 @@ cron.schedule(`${minuto} ${Number(hora) + 5} * * *`, async () => {
 const PORT = process.env.PORT || 3000
 app.listen(PORT, async () => {
   console.log(`🚀 BlockBag Bot corriendo en puerto ${PORT}`)
+  setMessageHandler(handleMessage)
   await connectToWhatsApp()
 })
