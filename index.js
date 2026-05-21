@@ -3,172 +3,196 @@ const express = require('express')
 const QRCode = require('qrcode')
 const cron = require('node-cron')
 const crypto = require('crypto')
-const axios = require('axios')
 
-const { connectToWhatsApp, sendMessage, sendImage, getStatus, setMessageHandler } = require('./whatsapp')
-const {
-  msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
-  msgCarritoAbandonado, msgPostventa, msgReporteDiario,
-  msgMenuPrincipal, msgMedidasGuia, msgPersonalizacionGuia,
-  msgMateriales, msgEnvios, msgOfertaCandado, msgSeleccionPago,
-  msgPagosDinamicos, urlImagenPago, msgContraEntrega,
-  msgPedirDatosEnvio, msgPedidoCompleto,
-} = require('./messages')
+const { connectToWhatsApp, sendMessage, sendButtons, sendImage, getStatus, setMessageHandler } = require('./whatsapp')
+const { msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
+        msgCarritoAbandonado, msgPostventa, msgReporteDiario,
+        msgMateriales, msgEnvios, msgOfertaCandado, msgSeleccionPago,
+        msgPagosDinamicos, msgContraEntrega, msgPedirDatosEnvio, msgPedidoCompleto } = require('./messages')
 const { limpiarTelefono, getStatsHoy } = require('./shopify')
 
 const app = express()
-
-// ─── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }))
 
-// ─── Sesiones de conversación en memoria ──────────────────────────────────────
+// ─── Sesiones ──────────────────────────────────────────────────────────────────
 const sessions = new Map()
-
 const STATES = {
   INICIO: 'INICIO',
-  MENU: 'MENU',
   ESPERANDO_MEDIDAS: 'ESPERANDO_MEDIDAS',
   ESPERANDO_PERSONALIZACION: 'ESPERANDO_PERSONALIZACION',
-  RESUMEN_PEDIDO: 'RESUMEN_PEDIDO',
   OFERTA_CANDADO: 'OFERTA_CANDADO',
   SELECCION_PAGO: 'SELECCION_PAGO',
   ESPERANDO_CONFIRMACION_COD: 'ESPERANDO_CONFIRMACION_COD',
   ESPERANDO_COMPROBANTE: 'ESPERANDO_COMPROBANTE',
   ESPERANDO_DATOS_ENVIO: 'ESPERANDO_DATOS_ENVIO',
 }
-
 function getSession(jid) {
-  if (!sessions.has(jid)) {
-    sessions.set(jid, { state: STATES.INICIO, pedido: { candado: false } })
-  }
+  if (!sessions.has(jid)) sessions.set(jid, { state: STATES.INICIO, pedido: { candado: false } })
   return sessions.get(jid)
 }
-
 function setSession(jid, data) {
   sessions.set(jid, { ...getSession(jid), ...data })
 }
 
-// ─── Manejador de mensajes entrantes ──────────────────────────────────────────
+// ─── Manejador de mensajes ─────────────────────────────────────────────────────
 async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // Palabras clave que reinician el menú
-  if (['hola', 'menu', 'menú', 'inicio', 'start', '0'].includes(t)) {
-    setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
-    await sendMessage(jid, msgMenuPrincipal())
+  // Reiniciar con hola/menu
+  if (['hola', 'menu', 'menú', 'inicio', 'start', '0', 'hi'].includes(t) || session.state === STATES.INICIO) {
+    setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
+    await sendButtons(jid,
+      '¿En qué te puedo ayudar hoy? 🧳',
+      [
+        { id: 'tallas', title: '📐 Tallas y medidas' },
+        { id: 'colores', title: '🎨 Personalización' },
+        { id: 'materiales', title: '💎 Materiales' },
+        { id: 'precios', title: '💰 Precios' },
+        { id: 'envios', title: '🚚 Envíos' },
+        { id: 'formas_pago', title: '💳 Formas de pago' },
+        { id: 'asesor', title: '👤 Hablar con asesor' },
+      ]
+    )
     return
   }
 
-  // ── MENÚ PRINCIPAL ─────────────────────────────────────────────────────────
-  if (session.state === STATES.MENU || session.state === STATES.INICIO) {
-    if (t === '1' || t.includes('forro') || t.includes('producto')) {
-      setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
-      await sendImage(jid, process.env.IMG_MEDIDAS_URL, msgMedidasGuia())
+  // ── Respuestas de botones o texto ──────────────────────────────────────────
+  if (session.state === STATES.INICIO || t === 'tallas' || t === 'tallas y medidas') {
+    setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
+    await sendImage(jid,
+      process.env.IMG_MEDIDAS_URL,
+      '📏 *Guía de medidas — Forros BlockBag*\n\nMide tu maleta *sin contar las ruedas* y dime:\n\n↕️ *Alto* en cm\n↔️ *Ancho* en cm\n\nCon esas medidas te digo qué talla necesitas 👇'
+    )
+    return
+  }
+
+  if (t === 'colores' || t === 'personalización' || t === 'personalizacion') {
+    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
+    await sendImage(jid,
+      process.env.IMG_PERSONALIZACION_URL,
+      '🎨 *Personalización BlockBag*\n\nCuéntanos:\n✏️ ¿Qué diseño quieres?\n📍 ¿En qué parte de la maleta?\n\nEscríbenos todos los detalles 👇'
+    )
+    return
+  }
+
+  if (t === 'materiales') {
+    await sendMessage(jid, msgMateriales())
+    await sendButtons(jid, '¿En qué más te puedo ayudar?', [
+      { id: 'tallas', title: '📐 Tallas y medidas' },
+      { id: 'formas_pago', title: '💳 Formas de pago' },
+      { id: 'asesor', title: '👤 Hablar con asesor' },
+    ])
+    return
+  }
+
+  if (t === 'precios') {
+    await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscríbenos directamente para cotizar tu forro según la talla y personalización que necesites.')
+    await sendButtons(jid, '¿Qué deseas hacer?', [
+      { id: 'tallas', title: '📐 Ver tallas' },
+      { id: 'asesor', title: '👤 Hablar con asesor' },
+    ])
+    return
+  }
+
+  if (t === 'envios' || t === 'envíos') {
+    await sendMessage(jid, msgEnvios())
+    await sendButtons(jid, '¿En qué más te ayudo?', [
+      { id: 'formas_pago', title: '💳 Formas de pago' },
+      { id: 'asesor', title: '👤 Hablar con asesor' },
+    ])
+    return
+  }
+
+  if (t === 'formas_pago' || t === 'formas de pago') {
+    setSession(jid, { state: STATES.OFERTA_CANDADO })
+    await sendMessage(jid, msgOfertaCandado())
+    await sendButtons(jid, '¿Deseas el candado?', [
+      { id: 'candado_si', title: '✅ Sí, incluirlo' },
+      { id: 'candado_no', title: '❌ No, continuar' },
+    ])
+    return
+  }
+
+  if (t === 'asesor' || t === 'hablar con asesor' || t === 'por mayor') {
+    await sendMessage(jid, '👤 *Conectando con un asesor...*\n\nEn breve alguien del equipo BlockBag te atenderá. ¡Gracias por tu paciencia! 🙏')
+    const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
+    for (const num of owners) {
+      await sendMessage(num.trim() + '@s.whatsapp.net',
+        `👤 *Cliente solicita asesor*\nNúmero: ${jid.replace('@s.whatsapp.net', '')}`)
+    }
+    return
+  }
+
+  // ── OFERTA CANDADO ─────────────────────────────────────────────────────────
+  if (session.state === STATES.OFERTA_CANDADO || t === 'candado_si' || t === 'candado_no') {
+    const quiere = t === 'candado_si' || ['si', 'sí', 'claro', 'dale'].some(r => t.includes(r))
+    setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, candado: quiere } })
+    const msg = quiere
+      ? `✅ *Candado agregado* 🔒 +$${Number(process.env.CANDADO_PRECIO || 10000).toLocaleString('es-CO')}\n\n`
+      : 'De acuerdo, sin candado.\n\n'
+    await sendMessage(jid, msg + msgSeleccionPago())
+    await sendButtons(jid, '¿Cómo deseas pagar?', [
+      { id: 'pago_transferencia', title: '🏦 Transferencia' },
+      { id: 'pago_cod', title: '💵 Contra entrega' },
+    ])
+    return
+  }
+
+  // ── SELECCIÓN PAGO ─────────────────────────────────────────────────────────
+  if (session.state === STATES.SELECCION_PAGO || t === 'pago_transferencia' || t === 'pago_cod') {
+    if (t === 'pago_transferencia' || t.includes('transfer') || t.includes('llave') || t.includes('nequi') || t === '1') {
+      setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE })
+      await sendImage(jid, t <= 15 ? process.env.PAGO_Q1_IMAGEN_URL : process.env.PAGO_Q2_IMAGEN_URL, msgPagosDinamicos())
       return
     }
-    if (t === '2' || t.includes('medida') || t.includes('talla')) {
-      setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
-      await sendImage(jid, process.env.IMG_MEDIDAS_URL, msgMedidasGuia())
+    if (t === 'pago_cod' || t.includes('contra') || t.includes('efectivo') || t === '2') {
+      setSession(jid, { state: STATES.ESPERANDO_CONFIRMACION_COD })
+      await sendMessage(jid, msgContraEntrega())
+      await sendButtons(jid, '¿Confirmas las condiciones?', [
+        { id: 'cod_confirma', title: '✅ Sí, confirmo' },
+        { id: 'cod_no', title: '🔄 Elegir otro método' },
+      ])
       return
     }
-    if (t === '3' || t.includes('personaliz')) {
-      setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
-      await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, msgPersonalizacionGuia())
-      return
+  }
+
+  // ── CONTRA ENTREGA CONFIRMACIÓN ────────────────────────────────────────────
+  if (session.state === STATES.ESPERANDO_CONFIRMACION_COD || t === 'cod_confirma' || t === 'cod_no') {
+    if (t === 'cod_confirma' || ['si', 'sí', 'confirmo'].some(r => t.includes(r))) {
+      setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
+      await sendMessage(jid, msgPedirDatosEnvio())
+    } else {
+      setSession(jid, { state: STATES.SELECCION_PAGO })
+      await sendButtons(jid, '¿Cómo deseas pagar?', [
+        { id: 'pago_transferencia', title: '🏦 Transferencia' },
+        { id: 'pago_cod', title: '💵 Contra entrega' },
+      ])
     }
-    if (t === '4' || t.includes('envío') || t.includes('envio')) {
-      await sendMessage(jid, msgEnvios())
-      return
-    }
-    if (t === '5' || t.includes('pago')) {
-      setSession(jid, { state: STATES.OFERTA_CANDADO })
-      await sendMessage(jid, msgOfertaCandado())
-      return
-    }
-    if (t === '6' || t.includes('material') || t.includes('tela')) {
-      await sendMessage(jid, msgMateriales())
-      return
-    }
-    setSession(jid, { state: STATES.MENU })
-    await sendMessage(jid, msgMenuPrincipal())
     return
   }
 
   // ── ESPERANDO MEDIDAS ──────────────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
-    setSession(jid, {
-      state: STATES.RESUMEN_PEDIDO,
-      pedido: { ...session.pedido, medidas: texto }
-    })
-    await sendMessage(jid, `✅ *Medidas registradas:* ${texto}\n\n¡Perfecto! ¿Deseas continuar con la compra o agregar personalización?\n\n1️⃣ Continuar con la compra\n2️⃣ Agregar personalización`)
+    setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, medidas: texto } })
+    await sendMessage(jid, `✅ *Medidas registradas:* ${texto}\n\n¡Perfecto!`)
+    await sendMessage(jid, msgOfertaCandado())
+    await sendButtons(jid, '¿Deseas el candado?', [
+      { id: 'candado_si', title: '✅ Sí, incluirlo' },
+      { id: 'candado_no', title: '❌ No, continuar' },
+    ])
     return
   }
 
   // ── ESPERANDO PERSONALIZACIÓN ──────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
-    setSession(jid, {
-      state: STATES.RESUMEN_PEDIDO,
-      pedido: { ...session.pedido, personalizacion: texto }
-    })
-    await sendMessage(jid, `✅ *Personalización registrada:*\n_${texto}_\n\n¿Continuamos con la compra?\n\n1️⃣ Sí, continuar\n2️⃣ Modificar diseño`)
-    return
-  }
-
-  // ── RESUMEN PEDIDO ─────────────────────────────────────────────────────────
-  if (session.state === STATES.RESUMEN_PEDIDO) {
-    if (t === '1' || t.includes('continuar') || t.includes('compra') || t.includes('si') || t.includes('sí')) {
-      setSession(jid, { state: STATES.OFERTA_CANDADO })
-      await sendMessage(jid, msgOfertaCandado())
-      return
-    }
-    if (t === '2' || t.includes('personaliz')) {
-      setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
-      await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, msgPersonalizacionGuia())
-      return
-    }
-  }
-
-  // ── OFERTA CANDADO ─────────────────────────────────────────────────────────
-  if (session.state === STATES.OFERTA_CANDADO) {
-    const quiere = ['si', 'sí', 's', 'yes', 'claro', 'dale', '1'].some(r => t.includes(r))
-    setSession(jid, {
-      state: STATES.SELECCION_PAGO,
-      pedido: { ...session.pedido, candado: quiere }
-    })
-    const respuesta = quiere
-      ? `✅ *Candado agregado* 🔒 +$${Number(process.env.CANDADO_PRECIO || 10000).toLocaleString('es-CO')}\n\n`
-      : `De acuerdo, continuamos sin candado.\n\n`
-    await sendMessage(jid, respuesta + msgSeleccionPago())
-    return
-  }
-
-  // ── SELECCIÓN DE PAGO ──────────────────────────────────────────────────────
-  if (session.state === STATES.SELECCION_PAGO) {
-    if (t === '1' || t.includes('transfer') || t.includes('llave') || t.includes('nequi')) {
-      setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE })
-      // Enviar imagen de pago según quincena automáticamente
-      await sendImage(jid, urlImagenPago(), msgPagosDinamicos())
-      return
-    }
-    if (t === '2' || t.includes('contra') || t.includes('efectivo')) {
-      setSession(jid, { state: STATES.ESPERANDO_CONFIRMACION_COD })
-      // Recordatorio automático obligatorio
-      await sendMessage(jid, msgContraEntrega())
-      return
-    }
-  }
-
-  // ── CONFIRMACIÓN CONTRA ENTREGA ────────────────────────────────────────────
-  if (session.state === STATES.ESPERANDO_CONFIRMACION_COD) {
-    const confirma = ['si', 'sí', 'confirmo', 'acepto', 'ok', 'dale', 'claro'].some(r => t.includes(r))
-    if (confirma) {
-      setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
-      await sendMessage(jid, msgPedirDatosEnvio())
-    } else {
-      setSession(jid, { state: STATES.SELECCION_PAGO })
-      await sendMessage(jid, msgSeleccionPago())
-    }
+    setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, personalizacion: texto } })
+    await sendMessage(jid, `✅ *Personalización registrada:* ${texto}`)
+    await sendMessage(jid, msgOfertaCandado())
+    await sendButtons(jid, '¿Deseas el candado?', [
+      { id: 'candado_si', title: '✅ Sí, incluirlo' },
+      { id: 'candado_no', title: '❌ No, continuar' },
+    ])
     return
   }
 
@@ -177,56 +201,60 @@ async function handleMessage(jid, texto, hasMedia) {
     if (hasMedia) {
       setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
       await sendMessage(jid, msgPedidoCompleto())
-      // Notificar dueños
       const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
       for (const num of owners) {
         await sendMessage(num.trim() + '@s.whatsapp.net',
-          `📸 *Comprobante recibido*\nCliente: ${jid}\nRevisar y confirmar pedido.`)
+          `📸 *Comprobante recibido*\nCliente: ${jid.replace('@s.whatsapp.net', '')}`)
       }
     } else {
-      await sendMessage(jid, `📸 Por favor envía el *pantallazo del comprobante de pago* para proceder con tu pedido.`)
+      await sendMessage(jid, '📸 Por favor envía el *pantallazo del comprobante de pago* para proceder.')
     }
     return
   }
 
-  // ── ESPERANDO DATOS DE ENVÍO ───────────────────────────────────────────────
+  // ── ESPERANDO DATOS ENVÍO ──────────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_DATOS_ENVIO) {
     setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
     await sendMessage(jid, msgPedidoCompleto())
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
     for (const num of owners) {
       await sendMessage(num.trim() + '@s.whatsapp.net',
-        `📦 *Pedido contra entrega*\nCliente: ${jid}\nDatos: ${texto}`)
+        `📦 *Pedido contra entrega*\nCliente: ${jid.replace('@s.whatsapp.net', '')}\nDatos: ${texto}`)
     }
     return
   }
 
   // Fallback
-  await sendMessage(jid, `No entendí tu mensaje 😅\n\nEscribe *Hola* para ver el menú.`)
+  await sendButtons(jid, '¿En qué te puedo ayudar? 🧳', [
+    { id: 'tallas', title: '📐 Tallas y medidas' },
+    { id: 'colores', title: '🎨 Personalización' },
+    { id: 'materiales', title: '💎 Materiales' },
+    { id: 'precios', title: '💰 Precios' },
+    { id: 'envios', title: '🚚 Envíos' },
+    { id: 'formas_pago', title: '💳 Formas de pago' },
+    { id: 'asesor', title: '👤 Hablar con asesor' },
+  ])
 }
 
-// ─── Exportar manejador para whatsapp.js ──────────────────────────────────────
 // ─── Verificaciones ───────────────────────────────────────────────────────────
 function verificarShopify(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256']
   if (!hmac) return res.status(401).json({ error: 'Sin firma' })
-  const digest = crypto
-    .createHmac('sha256', process.env.SHOPIFY_WEBHOOK_SECRET)
+  const digest = crypto.createHmac('sha256', process.env.SHOPIFY_WEBHOOK_SECRET)
     .update(req.rawBody).digest('base64')
   if (digest !== hmac) return res.status(401).json({ error: 'Firma inválida' })
   next()
 }
-
 function verificarApi(req, res, next) {
-  const secret = req.headers['x-api-secret']
-  if (secret !== process.env.API_SECRET) return res.status(401).json({ error: 'No autorizado' })
+  if (req.headers['x-api-secret'] !== process.env.API_SECRET)
+    return res.status(401).json({ error: 'No autorizado' })
   next()
 }
 
-// ─── Páginas QR ───────────────────────────────────────────────────────────────
+// ─── QR ───────────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
   const { status } = getStatus()
-  res.send(`<html><head><title>WhatsApp Bot</title><meta http-equiv="refresh" content="5">
+  res.send(`<html><head><title>BlockBag Bot</title><meta http-equiv="refresh" content="5">
     <style>body{font-family:sans-serif;text-align:center;padding:40px;background:#f0f2f5}
     h1{color:#075E54}.status{padding:12px 24px;border-radius:20px;display:inline-block;font-weight:bold}
     .connected{background:#d4edda;color:#155724}.disconnected{background:#fff3cd;color:#856404}</style>
@@ -295,7 +323,6 @@ app.post('/webhook/checkout/abandoned', verificarShopify, async (req, res) => {
   } catch (e) { console.error('Error webhook abandoned:', e.message) }
 })
 
-// ─── API para Make ─────────────────────────────────────────────────────────────
 app.post('/api/send', verificarApi, async (req, res) => {
   try {
     const { phone, message } = req.body
@@ -317,24 +344,18 @@ app.post('/api/reporte', verificarApi, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-app.get('/health', (req, res) => {
-  res.json({ ok: true, status: getStatus().status, ts: new Date().toISOString() })
-})
+app.get('/health', (req, res) => res.json({ ok: true, status: getStatus().status }))
 
-// ─── Cron reporte diario ───────────────────────────────────────────────────────
 const hora = process.env.REPORT_HOUR || '7'
 const minuto = process.env.REPORT_MINUTE || '0'
 cron.schedule(`${minuto} ${Number(hora) + 5} * * *`, async () => {
   try {
     const stats = await getStatsHoy()
     const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-    for (const num of numeros) {
-      await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats))
-    }
-  } catch (e) { console.error('Error reporte cron:', e.message) }
+    for (const num of numeros) await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats))
+  } catch (e) { console.error('Error reporte:', e.message) }
 }, { timezone: 'UTC' })
 
-// ─── Arrancar ──────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000
 app.listen(PORT, async () => {
   console.log(`🚀 BlockBag Bot corriendo en puerto ${PORT}`)
