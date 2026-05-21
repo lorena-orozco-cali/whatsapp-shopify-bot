@@ -40,52 +40,52 @@ async function handleMessage(jid, texto, hasMedia) {
   // Palabras que muestran el menú
   const esMenuTrigger = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas', 'buenos', 'buen'].some(w => t.includes(w))
 
-  if (esMenuTrigger || session.state === STATES.INICIO) {
+  if (esMenuTrigger) {
     setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
     await sendMenu(jid)
     return
   }
 
   // ── Opciones del menú ──────────────────────────────────────────────────────
-  if (t === 'tallas' || t.includes('medida') || t.includes('talla')) {
+  if (t === '1' || t === 'tallas' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
       '📏 *Guía de medidas — Forros BlockBag*\n\nMide tu maleta *sin contar las ruedas* y dime:\n\n↕️ *Alto* en cm\n↔️ *Ancho* en cm\n\nCon esas medidas te digo exactamente qué talla necesitas 👇')
     return
   }
 
-  if (t === 'colores' || t.includes('personaliz') || t.includes('diseño')) {
+  if (t === '2' || t === 'colores' || t.includes('personaliz') || t.includes('diseño')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
       '🎨 *Personalización BlockBag*\n\nCuéntanos:\n✏️ ¿Qué diseño quieres?\n📍 ¿En qué parte de la maleta?\n\nEscríbenos todos los detalles 👇')
     return
   }
 
-  if (t === 'materiales') {
+  if (t === '3' || t === 'materiales') {
     await sendMessage(jid, msgMateriales())
     await sendMenu(jid)
     return
   }
 
-  if (t === 'precios') {
+  if (t === '4' || t === 'precios') {
     await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscríbenos para cotizar según la talla y personalización que necesites. Un asesor te responde de inmediato.')
     await sendMenu(jid)
     return
   }
 
-  if (t === 'envios' || t.includes('envío') || t.includes('envio')) {
+  if (t === '5' || t === 'envios' || t.includes('envío') || t.includes('envio')) {
     await sendMessage(jid, msgEnvios())
     await sendMenu(jid)
     return
   }
 
-  if (t === 'formas_pago' || t.includes('pago') || t.includes('forma')) {
+  if (t === '6' || t === 'formas_pago' || t.includes('pago') || t.includes('forma')) {
     setSession(jid, { state: STATES.OFERTA_CANDADO })
     await sendMessage(jid, msgOfertaCandado())
     return
   }
 
-  if (t === 'asesor' || t.includes('asesor') || t.includes('mayor') || t.includes('humano')) {
+  if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('mayor') || t.includes('humano')) {
     await sendMessage(jid, '👤 *Conectando con un asesor...*\n\nEn breve alguien del equipo BlockBag te atenderá. ¡Gracias por tu paciencia! 🙏')
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
     for (const num of owners) {
