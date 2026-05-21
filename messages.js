@@ -2,10 +2,7 @@ require('dotenv').config()
 
 // ─────────────────────────────────────────────
 //  Plantillas de mensajes — BlockBag Bot
-//  Mensajes originales + nuevos módulos
 // ─────────────────────────────────────────────
-
-// ── ORIGINALES ────────────────────────────────
 
 function msgPedidoNuevo(order) {
   const items = order.line_items
@@ -74,9 +71,6 @@ ${stats.pedidos > stats.pedidosAyer ? `📈 +${stats.pedidos - stats.pedidosAyer
 👉 Dashboard: ${process.env.DASHBOARD_URL || 'dashboard.mitienda.com'}`
 }
 
-// ── NUEVOS ────────────────────────────────────
-
-// Menú principal
 function msgMenuPrincipal() {
   return `¡Hola! 👋 Bienvenido a *BlockBag* — Protectores para maletas 🧳
 
@@ -90,9 +84,10 @@ function msgMenuPrincipal() {
 6️⃣ Materiales`
 }
 
-// Medidas — texto que acompaña la imagen guía
 function msgMedidasGuia() {
   return `📏 *Guía de medidas — Forros BlockBag*
+
+👉 https://cdn.shopify.com/s/files/1/0696/1053/7275/files/WhatsApp_Image_2026-05-20_at_5.21.01_PM.jpg?v=1779318089
 
 Mide tu maleta *sin contar las ruedas* y dime:
 
@@ -102,11 +97,10 @@ Mide tu maleta *sin contar las ruedas* y dime:
 Con esas medidas te digo exactamente qué talla necesitas 👇`
 }
 
-// Personalización — texto que acompaña la imagen guía
 function msgPersonalizacionGuia() {
   return `🎨 *Personalización BlockBag*
 
-Mira la imagen — puedes indicarnos en qué espacio quieres tu diseño.
+👉 https://cdn.shopify.com/s/files/1/0696/1053/7275/files/WhatsApp_Image_2026-05-20_at_5.24.49_PM.jpg?v=1779318073
 
 Cuéntanos:
 ✏️ ¿Qué quieres que diga o qué diseño quieres?
@@ -115,7 +109,6 @@ Cuéntanos:
 Escríbenos todos los detalles 👇`
 }
 
-// Materiales actualizados
 function msgMateriales() {
   return `🧵 *Nuestros materiales*
 
@@ -124,7 +117,6 @@ Nuestros forros son elaborados en *tela industrial de Pat Primo* — una tela gr
 ¡Calidad garantizada! 💪`
 }
 
-// Envíos con énfasis en candado
 function msgEnvios() {
   return `🚚 *Envíos BlockBag*
 
@@ -134,7 +126,6 @@ function msgEnvios() {
 Tu pedido llega seguro a donde estés 📦`
 }
 
-// Oferta de candado — se activa al cerrar la compra
 function msgOfertaCandado() {
   return `🔒 *¿Deseas incluir tu candado de seguridad?*
 
@@ -147,7 +138,6 @@ Responde:
 ❌ *No* — continuar sin candado`
 }
 
-// Selección de método de pago
 function msgSeleccionPago() {
   return `💳 ¿Cómo deseas pagar?
 
@@ -155,11 +145,12 @@ function msgSeleccionPago() {
 2️⃣ Pago contra entrega`
 }
 
-// Pagos dinámicos por quincena — solo texto
 function msgPagosDinamicos() {
   const day = new Date().getDate()
   if (day <= 15) {
     return `💳 *Medios de Pago BlockBag*
+
+👉 https://cdn.shopify.com/s/files/1/0696/1053/7275/files/WhatsApp_Image_2026-05-20_at_5.19.11_PM_1.jpg?v=1779318117
 
 🔑 *Llave:* ${process.env.PAGO_Q1_NUMERO_1 || '66986350'}
 📱 *Nequi:* ${process.env.PAGO_Q1_NUMERO_2 || '3174232091'}
@@ -169,6 +160,8 @@ function msgPagosDinamicos() {
 ✅ Paga fácil | ⚡ Rápido | 🔒 Seguro`
   } else {
     return `💳 *Medios de Pago BlockBag*
+
+👉 https://cdn.shopify.com/s/files/1/0696/1053/7275/files/WhatsApp_Image_2026-05-20_at_5.19.11_PM.jpg?v=1779318117
 
 🔑 *Llave:* ${process.env.PAGO_Q2_ALIAS_1 || '@VCE626'}
 👤 *Titular:* ${process.env.PAGO_Q2_TITULAR_1 || 'Valentina Cervino'}
@@ -181,7 +174,6 @@ function msgPagosDinamicos() {
   }
 }
 
-// URL imagen de pago según quincena
 function urlImagenPago() {
   const day = new Date().getDate()
   return day <= 15
@@ -189,7 +181,6 @@ function urlImagenPago() {
     : process.env.PAGO_Q2_IMAGEN_URL
 }
 
-// Recordatorio contra entrega — SIEMPRE se envía al elegir esta opción
 function msgContraEntrega() {
   return `✅ *Pago contra entrega seleccionado.*
 
@@ -209,7 +200,6 @@ El pedido será devuelto y se generarán *cargos adicionales de reenvío*.
 🔄 *No* — elegir otro método de pago`
 }
 
-// Pedir datos de envío
 function msgPedirDatosEnvio() {
   return `📝 Para procesar tu pedido necesitamos tus datos de envío:
 
@@ -221,7 +211,6 @@ function msgPedirDatosEnvio() {
 Envíalos todos juntos 👇`
 }
 
-// Pedido completado
 function msgPedidoCompleto() {
   return `✅ *¡Pedido registrado con éxito!*
 
@@ -231,14 +220,12 @@ En breve un asesor confirmará tu orden y te dará más detalles.
 }
 
 module.exports = {
-  // Originales
   msgPedidoNuevo,
   msgPagoConfirmado,
   msgEnvioDespachado,
   msgCarritoAbandonado,
   msgPostventa,
   msgReporteDiario,
-  // Nuevos
   msgMenuPrincipal,
   msgMedidasGuia,
   msgPersonalizacionGuia,
