@@ -18,9 +18,7 @@ async function connectToWhatsApp() {
   sock = makeWASocket({
     version, logger, auth: state,
     browser: ['BlockBagBot', 'Chrome', '120.0.0'],
-    connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 60000,
-    keepAliveIntervalMs: 25000,
+    connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 25000,
   })
   sock.ev.on('creds.update', saveCreds)
   sock.ev.on('connection.update', (update) => {
@@ -41,8 +39,6 @@ async function connectToWhatsApp() {
       const jid = msg.key.remoteJid
       const texto = msg.message?.conversation
         || msg.message?.extendedTextMessage?.text
-        || msg.message?.buttonsResponseMessage?.selectedButtonId
-        || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId
         || ''
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.documentMessage || msg.message?.videoMessage)
       try { if (messageHandler) await messageHandler(jid, texto, hasMedia) }
@@ -57,44 +53,21 @@ async function sendMessage(jid, text) {
   await sock.sendMessage(jid, { text })
 }
 
-// Menú con lista interactiva (soportada por Baileys sin API oficial)
 async function sendMenu(jid) {
-  if (!sock || connectionStatus !== 'connected') return
-  try {
-    await sock.sendMessage(jid, {
-      listMessage: {
-        title: '🧳 BlockBag — Protectores para maletas',
-        text: '¿En qué te puedo ayudar hoy?',
-        footerText: 'Selecciona una opción',
-        buttonText: 'Ver opciones',
-        sections: [
-          {
-            title: 'Productos',
-            rows: [
-              { rowId: 'tallas', title: '📐 Tallas y medidas', description: 'Guía de medidas para tu maleta' },
-              { rowId: 'colores', title: '🎨 Personalización', description: 'Diseños y colores disponibles' },
-              { rowId: 'materiales', title: '💎 Materiales', description: 'Calidad de nuestros forros' },
-              { rowId: 'precios', title: '💰 Precios', description: 'Costos y promociones' },
-            ]
-          },
-          {
-            title: 'Compra',
-            rows: [
-              { rowId: 'envios', title: '🚚 Envíos', description: 'Nacionales e internacionales' },
-              { rowId: 'formas_pago', title: '💳 Formas de pago', description: 'Llave, Nequi, contra entrega' },
-              { rowId: 'asesor', title: '👤 Hablar con asesor', description: 'Atención personalizada' },
-            ]
-          }
-        ]
-      }
-    })
-  } catch (err) {
-    console.error('Error menú lista:', err.message)
-    // Fallback texto
-    await sock.sendMessage(jid, {
-      text: `🧳 *BlockBag — Protectores para maletas*\n\n¿En qué te puedo ayudar?\n\n📐 Escribe *medidas*\n🎨 Escribe *diseño*\n💎 Escribe *materiales*\n💰 Escribe *precios*\n🚚 Escribe *envios*\n💳 Escribe *pago*\n👤 Escribe *asesor*`
-    })
-  }
+  await sendMessage(jid,
+`🧳 *BlockBag — Protectores para maletas*
+
+¿En qué te puedo ayudar hoy?
+
+1️⃣ *Tallas y medidas*
+2️⃣ *Personalización*
+3️⃣ *Materiales*
+4️⃣ *Precios*
+5️⃣ *Envíos*
+6️⃣ *Formas de pago*
+7️⃣ *Hablar con asesor*
+
+_Responde con el número_ 👇`)
 }
 
 function downloadImage(url) {
@@ -112,15 +85,17 @@ function downloadImage(url) {
 async function sendImage(jid, imageUrl, caption) {
   if (!sock || connectionStatus !== 'connected') return
   try {
+    console.log(`📥 Descargando imagen: ${imageUrl}`)
     const buffer = await downloadImage(imageUrl)
+    console.log(`📦 Buffer obtenido: ${buffer.length} bytes`)
     await sock.sendMessage(jid, { image: buffer, mimetype: 'image/jpeg', caption: caption || '' })
-    console.log(`🖼️ Imagen enviada a ${jid}`)
+    console.log(`✅ Imagen enviada a ${jid}`)
   } catch (err) {
-    console.error('Error imagen:', err.message)
+    console.error('❌ Error imagen:', err.message)
+    // Fallback: enviar texto con link
     await sock.sendMessage(jid, { text: (caption || '') + '\n\n👉 ' + imageUrl })
   }
 }
 
 function getStatus() { return { status: connectionStatus, qr: qrCode } }
-
 module.exports = { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessageHandler }
