@@ -1,6 +1,8 @@
 const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const pino = require('pino')
 const path = require('path')
+const https = require('https')
+const http = require('http')
 
 let sock = null
 let qrCode = null
@@ -8,7 +10,6 @@ let connectionStatus = 'disconnected'
 let messageHandler = null
 const logger = pino({ level: 'silent' })
 
-// Registrar el handler desde afuera (lo pasa index.js)
 function setMessageHandler(fn) {
   messageHandler = fn
 }
@@ -83,13 +84,33 @@ async function sendMessage(jid, text) {
   console.log(`📤 Mensaje enviado a ${jid}`)
 }
 
+// Descarga la imagen como buffer antes de enviarla
+function downloadImage(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https') ? https : http
+    client.get(url, (res) => {
+      const chunks = []
+      res.on('data', chunk => chunks.push(chunk))
+      res.on('end', () => resolve(Buffer.concat(chunks)))
+      res.on('error', reject)
+    }).on('error', reject)
+  })
+}
+
 async function sendImage(jid, imageUrl, caption) {
   if (!sock || connectionStatus !== 'connected') return
   try {
-    await sock.sendMessage(jid, { image: { url: imageUrl }, caption: caption || '' })
+    console.log(`🖼️ Descargando imagen: ${imageUrl}`)
+    const buffer = await downloadImage(imageUrl)
+    await sock.sendMessage(jid, {
+      image: buffer,
+      mimetype: 'image/jpeg',
+      caption: caption || '',
+    })
     console.log(`🖼️ Imagen enviada a ${jid}`)
   } catch (err) {
     console.error('Error enviando imagen:', err.message)
+    // Fallback: enviar solo el texto
     await sock.sendMessage(jid, { text: caption || '' })
   }
 }
