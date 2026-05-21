@@ -38,15 +38,7 @@ async function handleMessage(jid, texto, hasMedia) {
   const session = getSession(jid)
 
   // Palabras que muestran el menú
-  const esMenuTrigger = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas', 'buenos', 'buen'].some(w => t.includes(w))
-
-  if (esMenuTrigger) {
-    setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
-    await sendMenu(jid)
-    return
-  }
-
-  // ── Opciones del menú ──────────────────────────────────────────────────────
+  // ── Opciones del menú por número — se procesan PRIMERO ───────────────────
   if (t === '1' || t === 'tallas' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
@@ -183,6 +175,11 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // Trigger menu
+  const esMenuTrigger = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas', 'buenos', 'buen'].some(w => t.includes(w))
+  if (esMenuTrigger) {
+    setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
+  }
   // Fallback — mostrar menú
   await sendMenu(jid)
 }
