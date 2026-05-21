@@ -18,12 +18,14 @@ async function connectToWhatsApp() {
   sock = makeWASocket({
     version, logger, auth: state,
     browser: ['BlockBagBot', 'Chrome', '120.0.0'],
-    connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 25000,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000,
   })
   sock.ev.on('creds.update', saveCreds)
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update
-    if (qr) { qrCode = qr; connectionStatus = 'qr_ready'; console.log('📱 QR listo — visita /qr') }
+    if (qr) { qrCode = qr; connectionStatus = 'qr_ready'; console.log('📱 QR listo') }
     if (connection === 'open') { qrCode = null; connectionStatus = 'connected'; console.log('✅ WhatsApp conectado') }
     if (connection === 'close') {
       connectionStatus = 'disconnected'
@@ -37,15 +39,14 @@ async function connectToWhatsApp() {
     for (const msg of messages) {
       if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us')) continue
       const jid = msg.key.remoteJid
-      // Texto normal o respuesta de botón
       const texto = msg.message?.conversation
         || msg.message?.extendedTextMessage?.text
         || msg.message?.buttonsResponseMessage?.selectedButtonId
-        || msg.message?.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson
+        || msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId
         || ''
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.documentMessage || msg.message?.videoMessage)
       try { if (messageHandler) await messageHandler(jid, texto, hasMedia) }
-      catch (e) { console.error('Error mensaje:', e.message) }
+      catch (e) { console.error('Error:', e.message) }
     }
   })
   return sock
@@ -56,26 +57,43 @@ async function sendMessage(jid, text) {
   await sock.sendMessage(jid, { text })
 }
 
-// Enviar botones interactivos (cajones)
-async function sendButtons(jid, bodyText, buttons) {
+// Menú con lista interactiva (soportada por Baileys sin API oficial)
+async function sendMenu(jid) {
   if (!sock || connectionStatus !== 'connected') return
   try {
-    // Baileys botones — máx 3 por mensaje, dividir si hay más
-    const chunks = []
-    for (let i = 0; i < buttons.length; i += 3) chunks.push(buttons.slice(i, i + 3))
-    for (const chunk of chunks) {
-      await sock.sendMessage(jid, {
-        buttons: chunk.map(b => ({ buttonId: b.id, buttonText: { displayText: b.title }, type: 1 })),
-        text: chunks.indexOf(chunk) === 0 ? bodyText : '',
-        headerType: 1,
-      })
-      await new Promise(r => setTimeout(r, 500))
-    }
+    await sock.sendMessage(jid, {
+      listMessage: {
+        title: '🧳 BlockBag — Protectores para maletas',
+        text: '¿En qué te puedo ayudar hoy?',
+        footerText: 'Selecciona una opción',
+        buttonText: 'Ver opciones',
+        sections: [
+          {
+            title: 'Productos',
+            rows: [
+              { rowId: 'tallas', title: '📐 Tallas y medidas', description: 'Guía de medidas para tu maleta' },
+              { rowId: 'colores', title: '🎨 Personalización', description: 'Diseños y colores disponibles' },
+              { rowId: 'materiales', title: '💎 Materiales', description: 'Calidad de nuestros forros' },
+              { rowId: 'precios', title: '💰 Precios', description: 'Costos y promociones' },
+            ]
+          },
+          {
+            title: 'Compra',
+            rows: [
+              { rowId: 'envios', title: '🚚 Envíos', description: 'Nacionales e internacionales' },
+              { rowId: 'formas_pago', title: '💳 Formas de pago', description: 'Llave, Nequi, contra entrega' },
+              { rowId: 'asesor', title: '👤 Hablar con asesor', description: 'Atención personalizada' },
+            ]
+          }
+        ]
+      }
+    })
   } catch (err) {
-    // Fallback a lista de texto si botones fallan
-    console.log('Botones no soportados, enviando texto:', err.message)
-    const lista = buttons.map(b => `• ${b.title}`).join('\n')
-    await sock.sendMessage(jid, { text: `${bodyText}\n\n${lista}` })
+    console.error('Error menú lista:', err.message)
+    // Fallback texto
+    await sock.sendMessage(jid, {
+      text: `🧳 *BlockBag — Protectores para maletas*\n\n¿En qué te puedo ayudar?\n\n📐 Escribe *medidas*\n🎨 Escribe *diseño*\n💎 Escribe *materiales*\n💰 Escribe *precios*\n🚚 Escribe *envios*\n💳 Escribe *pago*\n👤 Escribe *asesor*`
+    })
   }
 }
 
@@ -99,10 +117,10 @@ async function sendImage(jid, imageUrl, caption) {
     console.log(`🖼️ Imagen enviada a ${jid}`)
   } catch (err) {
     console.error('Error imagen:', err.message)
-    await sock.sendMessage(jid, { text: caption || '' })
+    await sock.sendMessage(jid, { text: (caption || '') + '\n\n👉 ' + imageUrl })
   }
 }
 
 function getStatus() { return { status: connectionStatus, qr: qrCode } }
 
-module.exports = { connectToWhatsApp, sendMessage, sendButtons, sendImage, getStatus, setMessageHandler }
+module.exports = { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessageHandler }
