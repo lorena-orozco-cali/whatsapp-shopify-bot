@@ -8,7 +8,7 @@ const { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessa
 const { msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
         msgCarritoAbandonado, msgPostventa, msgReporteDiario,
         msgMateriales, msgEnvios, msgOfertaCandado, msgPagosDinamicos,
-        msgContraEntrega, msgPedidoCompleto } = require('./messages')
+        msgContraEntrega, msgPedirDatosEnvio, msgPedidoCompleto } = require('./messages')
 const { limpiarTelefono, getStatsHoy } = require('./shopify')
 
 const app = express()
