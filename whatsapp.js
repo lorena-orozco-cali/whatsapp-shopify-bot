@@ -8,6 +8,7 @@ let sock = null
 let qrCode = null
 let connectionStatus = 'disconnected'
 let messageHandler = null
+let procesando = new Set()
 const logger = pino({ level: 'silent' })
 
 function setMessageHandler(fn) { messageHandler = fn }
@@ -36,10 +37,12 @@ async function connectToWhatsApp() {
     if (type !== 'notify') return
     for (const msg of messages) {
       if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us')) continue
+      const msgId = msg.key.id
+      if (procesando.has(msgId)) continue
+      procesando.add(msgId)
+      setTimeout(() => procesando.delete(msgId), 30000)
       const jid = msg.key.remoteJid
-      const texto = msg.message?.conversation
-        || msg.message?.extendedTextMessage?.text
-        || ''
+      const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.documentMessage || msg.message?.videoMessage)
       try { if (messageHandler) await messageHandler(jid, texto, hasMedia) }
       catch (e) { console.error('Error:', e.message) }
@@ -64,7 +67,8 @@ async function sendMenu(jid) {
 3️⃣ *Precios*
 4️⃣ *Envíos*
 5️⃣ *Formas de pago*
-6️⃣ *Hablar con asesor*
+6️⃣ *Personalización*
+7️⃣ *Hablar con asesor*
 
 _Responde con el número_ 👇`)
 }
@@ -86,12 +90,10 @@ async function sendImage(jid, imageUrl, caption) {
   try {
     console.log(`📥 Descargando imagen: ${imageUrl}`)
     const buffer = await downloadImage(imageUrl)
-    console.log(`📦 Buffer obtenido: ${buffer.length} bytes`)
     await sock.sendMessage(jid, { image: buffer, mimetype: 'image/jpeg', caption: caption || '' })
     console.log(`✅ Imagen enviada a ${jid}`)
   } catch (err) {
     console.error('❌ Error imagen:', err.message)
-    // Fallback: enviar texto con link
     await sock.sendMessage(jid, { text: (caption || '') + '\n\n👉 ' + imageUrl })
   }
 }
