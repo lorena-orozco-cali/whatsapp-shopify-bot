@@ -60,12 +60,11 @@ async function sendMenu(jid) {
 ¿En qué te puedo ayudar hoy?
 
 1️⃣ *Tallas y medidas*
-2️⃣ *Personalización*
-3️⃣ *Materiales*
-4️⃣ *Precios*
-5️⃣ *Envíos*
-6️⃣ *Formas de pago*
-7️⃣ *Hablar con asesor*
+2️⃣ *Materiales*
+3️⃣ *Precios*
+4️⃣ *Envíos*
+5️⃣ *Formas de pago*
+6️⃣ *Hablar con asesor*
 
 _Responde con el número_ 👇`)
 }
