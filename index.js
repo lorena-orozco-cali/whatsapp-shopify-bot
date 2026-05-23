@@ -8,7 +8,7 @@ const { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessa
 const { msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
         msgCarritoAbandonado, msgPostventa, msgReporteDiario,
         msgMateriales, msgEnvios, msgOfertaCandado, msgPagosDinamicos,
-        msgContraEntrega, msgPedirDatosEnvio, msgPedidoCompleto } = require('./messages')
+        msgContraEntrega, msgPedidoCompleto } = require('./messages')
 const { limpiarTelefono, getStatsHoy } = require('./shopify')
 
 const app = express()
@@ -19,65 +19,45 @@ const sessions = new Map()
 const STATES = {
   INICIO: 'INICIO',
   ESPERANDO_MEDIDAS: 'ESPERANDO_MEDIDAS',
+  ESPERANDO_DISENO: 'ESPERANDO_DISENO',
   ESPERANDO_PERSONALIZACION: 'ESPERANDO_PERSONALIZACION',
+  ESPERANDO_DATOS_PEDIDO: 'ESPERANDO_DATOS_PEDIDO',
   OFERTA_CANDADO: 'OFERTA_CANDADO',
   SELECCION_PAGO: 'SELECCION_PAGO',
   CONFIRMACION_COD: 'CONFIRMACION_COD',
   ESPERANDO_COMPROBANTE: 'ESPERANDO_COMPROBANTE',
-  ESPERANDO_DATOS_ENVIO: 'ESPERANDO_DATOS_ENVIO',
 }
+
 function getSession(jid) {
-  if (!sessions.has(jid)) sessions.set(jid, { state: STATES.INICIO, pedido: { candado: false } })
+  if (!sessions.has(jid)) sessions.set(jid, { state: STATES.INICIO, pedido: {} })
   return sessions.get(jid)
 }
 function setSession(jid, data) { sessions.set(jid, { ...getSession(jid), ...data }) }
+
+// ─── Calcular talla según medidas ─────────────────────────────────────────────
+function calcularTalla(texto) {
+  const nums = texto.match(/\d+/g)
+  if (!nums || nums.length < 2) return null
+  const alto = parseInt(nums[0])
+  const ancho = parseInt(nums[1])
+  if (alto >= 48 && alto <= 50 && ancho >= 35 && ancho <= 38) return 'S'
+  if (alto >= 58 && alto <= 64 && ancho >= 41 && ancho <= 46) return 'M'
+  if (alto >= 67 && alto <= 70 && ancho >= 47 && ancho <= 49) return 'L'
+  if (alto >= 71 && alto <= 75 && ancho >= 50 && ancho <= 52) return 'XL'
+  // Si no cae exacto, aproximar por alto
+  if (alto < 55) return 'S'
+  if (alto < 66) return 'M'
+  if (alto < 71) return 'L'
+  return 'XL'
+}
 
 // ─── Manejador principal ───────────────────────────────────────────────────────
 async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // Palabras que muestran el menú
-  // ── Opciones del menú por número — se procesan PRIMERO ───────────────────
-  if (t === '1' || t === 'tallas' || t.includes('medida') || t.includes('talla')) {
-    setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
-    await sendImage(jid, process.env.IMG_MEDIDAS_URL,
-      '📏 *Guía de medidas — Forros BlockBag*\n\nMide tu maleta *sin contar las ruedas* y dime:\n\n↕️ *Alto* en cm\n↔️ *Ancho* en cm\n\nCon esas medidas te digo exactamente qué talla necesitas 👇')
-    return
-  }
-
-  if (t === '2' || t === 'colores' || t.includes('personaliz') || t.includes('diseño')) {
-    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
-    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
-      '🎨 *Personalización BlockBag*\n\nCuéntanos:\n✏️ ¿Qué diseño quieres?\n📍 ¿En qué parte de la maleta?\n\nEscríbenos todos los detalles 👇')
-    return
-  }
-
-  if (t === '3' || t === 'materiales') {
-    await sendMessage(jid, msgMateriales())
-    await sendMenu(jid)
-    return
-  }
-
-  if (t === '4' || t === 'precios') {
-    await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscríbenos para cotizar según la talla y personalización que necesites. Un asesor te responde de inmediato.')
-    await sendMenu(jid)
-    return
-  }
-
-  if (t === '5' || t === 'envios' || t.includes('envío') || t.includes('envio')) {
-    await sendMessage(jid, msgEnvios())
-    await sendMenu(jid)
-    return
-  }
-
-  if (t === '6' || t === 'formas_pago' || t.includes('pago') || t.includes('forma')) {
-    setSession(jid, { state: STATES.OFERTA_CANDADO })
-    await sendMessage(jid, msgOfertaCandado())
-    return
-  }
-
-  if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('mayor') || t.includes('humano')) {
+  // Asesor — disponible en cualquier momento del flujo
+  if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('humano')) {
     await sendMessage(jid, '👤 *Conectando con un asesor...*\n\nEn breve alguien del equipo BlockBag te atenderá. ¡Gracias por tu paciencia! 🙏')
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
     for (const num of owners) {
@@ -87,10 +67,85 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // Personalización — solo si el cliente la pide explícitamente
+  if (t.includes('personaliz') || t.includes('diseño personaliz')) {
+    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
+    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
+      '🎨 *Personalización BlockBag*\n\nIndícanos en la imagen qué diseño quieres y en qué parte de la maleta.\n\nEscríbenos todos los detalles 👇')
+    return
+  }
+
+  // ── Opciones del menú principal ────────────────────────────────────────────
+  if (t === '1' || t === 'tallas' || t.includes('medida') || t.includes('talla')) {
+    setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
+    await sendImage(jid, process.env.IMG_MEDIDAS_URL,
+      '📏 *Guía de medidas — Forros BlockBag*\n\nMide tu maleta *sin contar las ruedas* y envíame:\n\n↕️ *Alto* en cm\n↔️ *Ancho* en cm\n\nEjemplo: _65 45_')
+    return
+  }
+
+  if (t === '2' || t === 'materiales') {
+    await sendMessage(jid, msgMateriales())
+    await sendMessage(jid, '¿Te puedo ayudar con algo más?\n\n1️⃣ Tallas y medidas\n3️⃣ Precios\n5️⃣ Envíos\n6️⃣ Formas de pago\n7️⃣ Hablar con asesor')
+    return
+  }
+
+  if (t === '3' || t === 'precios') {
+    await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscríbenos para cotizar según tu talla. Un asesor te responde de inmediato.\n\n7️⃣ Escribe *asesor* para hablar con nosotros.')
+    return
+  }
+
+  if (t === '4' || t === 'envios' || t.includes('envío') || t.includes('envio')) {
+    await sendMessage(jid, msgEnvios())
+    await sendMessage(jid, '¿Deseas continuar con tu pedido?\n\n1️⃣ Ver tallas\n6️⃣ Formas de pago\n7️⃣ Hablar con asesor')
+    return
+  }
+
+  if (t === '5' || t.includes('pago') || t.includes('forma')) {
+    setSession(jid, { state: STATES.OFERTA_CANDADO })
+    await sendMessage(jid, msgOfertaCandado())
+    return
+  }
+
+  // ── ESPERANDO MEDIDAS ──────────────────────────────────────────────────────
+  if (session.state === STATES.ESPERANDO_MEDIDAS) {
+    const talla = calcularTalla(texto)
+    setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
+
+    if (talla) {
+      await sendMessage(jid, `✅ Con esas medidas, tu talla recomendada es *${talla}*.\n\n¿Qué diseño deseas para tu forro?\n\nPuedes escribir el diseño que tienes en mente o escribir *catalogo* para ver las opciones disponibles.`)
+    } else {
+      await sendMessage(jid, `✅ Medidas registradas: ${texto}\n\n¿Qué diseño deseas para tu forro?\n\nEscribe el diseño que tienes en mente o escribe *catalogo* para ver opciones.`)
+    }
+    return
+  }
+
+  // ── ESPERANDO DISEÑO ───────────────────────────────────────────────────────
+  if (session.state === STATES.ESPERANDO_DISENO) {
+    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno: texto } })
+    await sendMessage(jid,
+      `✅ *Diseño registrado:* ${texto}\n\n📝 Para finalizar tu solicitud, por favor envíanos los siguientes datos:\n\n👤 *Nombre completo*\n🏠 *Dirección de entrega*\n🏙️ *Ciudad*\n📱 *Número de teléfono*\n\nEnvíalos todos en un solo mensaje 👇`)
+    return
+  }
+
+  // ── ESPERANDO PERSONALIZACIÓN ──────────────────────────────────────────────
+  if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
+    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
+    await sendMessage(jid,
+      `✅ *Personalización registrada:* ${texto}\n\n📝 Para finalizar tu solicitud, por favor envíanos los siguientes datos:\n\n👤 *Nombre completo*\n🏠 *Dirección de entrega*\n🏙️ *Ciudad*\n📱 *Número de teléfono*\n\nEnvíalos todos en un solo mensaje 👇`)
+    return
+  }
+
+  // ── ESPERANDO DATOS DEL PEDIDO ─────────────────────────────────────────────
+  if (session.state === STATES.ESPERANDO_DATOS_PEDIDO) {
+    setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, datosPedido: texto } })
+    await sendMessage(jid, msgOfertaCandado())
+    return
+  }
+
   // ── OFERTA CANDADO ─────────────────────────────────────────────────────────
   if (session.state === STATES.OFERTA_CANDADO) {
     const quiere = ['si', 'sí', 'claro', 'dale', 'yes', '1'].some(r => t.includes(r))
-    const noQuiere = ['no', '2'].some(r => t === r || t.startsWith(r + ' '))
+    const noQuiere = t === 'no' || t === '2'
     if (quiere || noQuiere) {
       setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, candado: quiere } })
       const msg = quiere
@@ -124,63 +179,44 @@ async function handleMessage(jid, texto, hasMedia) {
   // ── CONFIRMACIÓN CONTRA ENTREGA ────────────────────────────────────────────
   if (session.state === STATES.CONFIRMACION_COD) {
     if (['si', 'sí', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
-      setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
-      await sendMessage(jid, msgPedirDatosEnvio())
+      setSession(jid, { state: STATES.INICIO, pedido: {} })
+      await sendMessage(jid, msgPedidoCompleto())
+      const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
+      for (const num of owners) {
+        await sendMessage(`${num.trim()}@s.whatsapp.net`,
+          `📦 *Pedido contra entrega*\nCliente: ${jid.replace('@s.whatsapp.net', '')}\nDatos: ${JSON.stringify(session.pedido)}`)
+      }
     } else {
       setSession(jid, { state: STATES.SELECCION_PAGO })
-      await sendMessage(jid, '💳 ¿Cómo deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega')
+      await sendMessage(jid, '💳 Responde *1* para transferencia o *2* para contra entrega.')
     }
-    return
-  }
-
-  // ── ESPERANDO MEDIDAS ──────────────────────────────────────────────────────
-  if (session.state === STATES.ESPERANDO_MEDIDAS) {
-    setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, medidas: texto } })
-    await sendMessage(jid, `✅ *Medidas registradas:* ${texto}\n\n${msgOfertaCandado()}`)
-    return
-  }
-
-  // ── ESPERANDO PERSONALIZACIÓN ──────────────────────────────────────────────
-  if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
-    setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, personalizacion: texto } })
-    await sendMessage(jid, `✅ *Personalización registrada:* ${texto}\n\n${msgOfertaCandado()}`)
     return
   }
 
   // ── ESPERANDO COMPROBANTE ──────────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_COMPROBANTE) {
     if (hasMedia) {
-      setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
+      setSession(jid, { state: STATES.INICIO, pedido: {} })
       await sendMessage(jid, msgPedidoCompleto())
       const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
       for (const num of owners) {
         await sendMessage(`${num.trim()}@s.whatsapp.net`,
-          `📸 *Comprobante recibido*\nCliente: ${jid.replace('@s.whatsapp.net', '')}`)
+          `📸 *Comprobante recibido*\nCliente: ${jid.replace('@s.whatsapp.net', '')}\nDatos pedido: ${JSON.stringify(session.pedido)}`)
       }
     } else {
-      await sendMessage(jid, '📸 Por favor envía el *pantallazo del comprobante* para proceder con tu pedido.')
+      await sendMessage(jid, '📸 Por favor envía el *pantallazo del comprobante de pago* para proceder.')
     }
     return
   }
 
-  // ── ESPERANDO DATOS ENVÍO ──────────────────────────────────────────────────
-  if (session.state === STATES.ESPERANDO_DATOS_ENVIO) {
-    setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
-    await sendMessage(jid, msgPedidoCompleto())
-    const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-    for (const num of owners) {
-      await sendMessage(`${num.trim()}@s.whatsapp.net`,
-        `📦 *Pedido contra entrega*\nCliente: ${jid.replace('@s.whatsapp.net', '')}\nDatos: ${texto}`)
-    }
+  // ── Trigger menú o fallback ────────────────────────────────────────────────
+  const esMenuTrigger = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas', 'buenos'].some(w => t.includes(w))
+  if (esMenuTrigger || session.state === STATES.INICIO) {
+    setSession(jid, { state: STATES.INICIO, pedido: {} })
+    await sendMenu(jid)
     return
   }
 
-  // Trigger menu
-  const esMenuTrigger = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas', 'buenos', 'buen'].some(w => t.includes(w))
-  if (esMenuTrigger) {
-    setSession(jid, { state: STATES.INICIO, pedido: { candado: false } })
-  }
-  // Fallback — mostrar menú
   await sendMenu(jid)
 }
 
