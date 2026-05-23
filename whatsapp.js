@@ -13,7 +13,7 @@ const logger = pino({ level: 'silent' })
 function setMessageHandler(fn) { messageHandler = fn }
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'sessions'))
+  const { state, saveCreds } = await useMultiFileAuthState(process.env.SESSION_PATH || path.join(__dirname, 'sessions'))
   const { version } = await fetchLatestBaileysVersion()
   sock = makeWASocket({
     version, logger, auth: state,
