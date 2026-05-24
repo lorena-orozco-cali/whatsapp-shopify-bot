@@ -71,13 +71,18 @@ async function handleMessage(jid, texto, hasMedia) {
     const talla = calcularTalla(texto)
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
     const msg = talla ? `✅ Tu talla recomendada es *${talla}*.\n\n` : `✅ Medidas registradas.\n\n`
-    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nEscríbelo o visita nuestro catálogo 👇\nhttps://blockbag.co/collections/all')
+    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nVisita nuestro catálogo y escríbenos la referencia o mándanos la foto del producto que quieres 👇\nhttps://blockbag.co/collections/all' + '
+
+_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
     return
   }
 
   if (session.state === STATES.ESPERANDO_DISENO) {
-    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno: texto } })
-    await sendMessage(jid, `✅ *Diseño:* ${texto}\n\n📝 Envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇`)
+    const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
+    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno } })
+    await sendMessage(jid, `✅ *Diseño registrado* 👍\n\n📝 Para finalizar envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇
+
+_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`)
     return
   }
 
@@ -188,6 +193,14 @@ async function handleMessage(jid, texto, hasMedia) {
   if (t === '6' || t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, '🎨 *Personalización*\n\nIndícanos qué diseño y en qué parte 👇')
+    return
+  }
+
+  // Catalogo
+  if (t === 'catalogo' || t.includes('catálogo') || t.includes('catalogo')) {
+    await sendMessage(jid, '🛍️ *Catálogo BlockBag*\n\nhttps://blockbag.co/collections/all\n\nElige tu diseño y envíanos la referencia o la foto del producto.
+
+_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
     return
   }
 
