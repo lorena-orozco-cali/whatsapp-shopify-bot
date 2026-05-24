@@ -26,6 +26,7 @@ const STATES = {
   CONFIRMACION_COD: 'CONFIRMACION_COD',
   ESPERANDO_COMPROBANTE: 'ESPERANDO_COMPROBANTE',
   ESPERANDO_DATOS_ENVIO: 'ESPERANDO_DATOS_ENVIO',
+  ESPERANDO_NUMERO_ASESOR: 'ESPERANDO_NUMERO_ASESOR',
 }
 
 const NAV = '\n\n_Escribe *opciones* para ver el menu o *asesor* para hablar con nosotros_'
@@ -59,14 +60,13 @@ function calcularPrecioDiseno(diseno) {
   return 80000
 }
 
-async function notificarAsesor(jid) {
+async function notificarAsesor(numeroCliente) {
   const ownersRaw = process.env.OWNER_NUMBERS || ''
   const owners = ownersRaw.split(',').filter(Boolean)
-  const numeroCliente = jid.replace('@s.whatsapp.net', '').replace('@lid', '').replace(/[^0-9]/g, '')
   for (const num of owners) {
     const numClean = num.trim().replace(/[^0-9]/g, '')
     await sendMessage(numClean + '@s.whatsapp.net',
-      '🔔 *ALERTA: Cliente solicita asesor*\nNumero cliente: +' + numeroCliente + '\nEscribele en WhatsApp: https://wa.me/' + numeroCliente)
+      '🔔 *ALERTA: Cliente solicita asesor*\n\nNumero de celular del cliente: ' + numeroCliente + '\n\nBusca este contacto en el chat de BlockBag y atiendelo.')
   }
 }
 
@@ -81,10 +81,29 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('hablar con')) {
+    setSession(jid, { state: STATES.ESPERANDO_NUMERO_ASESOR })
+    await sendMessage(jid, '👤 *Hablar con un asesor*\n\nPor favor escríbenos tu número de celular para que un asesor te contacte.\n\nEjemplo: *3001234567*')
+    return
+  }
+
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
       '🎨 *Personalizacion BlockBag*\n\nTen en cuenta que la personalizacion tiene un tiempo de entrega de *8 a 10 dias habiles*.\n\nIndicanos que diseno quieres y en que parte de la maleta lo deseas.\n\nEscribenos todos los detalles 👇' + NAV)
+    return
+  }
+
+  if (session.state === STATES.ESPERANDO_NUMERO_ASESOR) {
+    const nums = texto.match(/\d+/g)
+    if (!nums || nums.join('').length < 7) {
+      await sendMessage(jid, 'Por favor escríbenos tu número de celular.\n\nEjemplo: *3001234567*')
+      return
+    }
+    const numeroCliente = nums.join('')
+    setSession(jid, { state: STATES.MENU })
+    await sendMessage(jid, '✅ Listo. Un asesor de BlockBag te contactará pronto. Gracias por tu paciencia 🙏')
+    await notificarAsesor(numeroCliente)
     return
   }
 
@@ -169,7 +188,7 @@ async function handleMessage(jid, texto, hasMedia) {
       const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
       for (const num of owners) {
         await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
-          '📸 Comprobante recibido\nCliente: +' + jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') + '\nPedido: ' + JSON.stringify(session.pedido))
+          '📸 Comprobante recibido\nPedido: ' + JSON.stringify(session.pedido))
       }
     } else {
       await sendMessage(jid, 'Por favor envia el pantallazo del comprobante de pago para proceder.' + NAV)
@@ -183,7 +202,7 @@ async function handleMessage(jid, texto, hasMedia) {
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
     for (const num of owners) {
       await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
-        '📦 Pedido contra entrega\nCliente: +' + jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') + '\nDatos: ' + texto)
+        '📦 Pedido contra entrega\nDatos: ' + texto + '\nPedido: ' + JSON.stringify(session.pedido))
     }
     return
   }
@@ -194,36 +213,25 @@ async function handleMessage(jid, texto, hasMedia) {
       'Guia de medidas BlockBag\n\nMide tu maleta sin contar las ruedas y enviame:\n\nAlto en cm\nAncho en cm\n\nEjemplo: alto 65 ancho 45' + NAV)
     return
   }
-
   if (t === '2' || t.includes('material')) {
     await sendMessage(jid, msgMateriales() + NAV)
     return
   }
-
   if (t === '3' || t.includes('precio') || t.includes('valor') || t.includes('costo')) {
-    await sendMessage(jid, '💰 *Precios BlockBag*\n\n🛍️ Ver catalogo completo:\nhttps://blockbag.co/collections/all\n\n*Forros con diseno:* $80.000\n*Forros basicos:* $60.000\n*Envio nacional:* $15.000\n*Candado de seguridad:* $22.000\n\n*Combos x2:*\nTalla S x2: $100.000\nTalla M x2: $110.000\nTalla L x2: $120.000\n\n*Accesorios:*\nBascula para maletas: $25.000\nPortapasaporte RFID: $40.000\nPortapasaporte basico: $20.000\nEtiqueta para maleta: $12.000\nProtector de ruedas: $25.000' + NAV)
+    await sendMessage(jid, '💰 *Precios BlockBag*\n\n🛍️ Ver catalogo completo:\nhttps://blockbag.co/collections/all\n\n*Forros con diseno:* $80.000\n*Forros basicos:* $60.000\n*Envio nacional:* $15.000\n*Candado de seguridad:* $22.000\n\n*Combos x2:*\nTalla S x2: $100.000\nTalla M x2: $110.000\nTalla L x2: $120.000\n\n*Accesorios:*\nBascula: $25.000\nPortapasaporte RFID: $40.000\nPortapasaporte basico: $20.000\nEtiqueta maleta: $12.000\nProtector ruedas: $25.000' + NAV)
     return
   }
-
   if (t === '4' || t.includes('envio') || t.includes('envío') || t.includes('despacho') || t.includes('entrega')) {
     await sendMessage(jid, msgEnvios() + NAV)
     return
   }
-
-  if (t === '5' || t.includes('pago') || t.includes('forma de pago') || t.includes('transferencia') || t.includes('nequi')) {
+  if (t === '5' || t.includes('pago') || t.includes('forma de pago')) {
     setSession(jid, { state: STATES.OFERTA_CANDADO })
     await sendMessage(jid, msgOfertaCandado() + NAV)
     return
   }
-
   if (t === '6' || t.includes('catalogo') || t.includes('catálogo')) {
     await sendMessage(jid, '🛍️ *Catalogo BlockBag*\n\nhttps://blockbag.co/collections/all\n\nElige tu diseno y envianos la referencia o la foto del producto.' + NAV)
-    return
-  }
-
-  if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('hablar con')) {
-    await sendMessage(jid, '👤 *Un asesor te atendera en breve.*\n\nGracias por tu paciencia 🙏' + NAV)
-    await notificarAsesor(jid)
     return
   }
 
