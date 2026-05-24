@@ -109,8 +109,9 @@ async function handleMessage(jid, texto, hasMedia) {
 
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
     const nums = texto.match(/\d+/g)
-    if (!texto || texto.trim().length < 2 || !nums) {
-      await sendMessage(jid, 'Por favor enviame las medidas de tu maleta.\n\nEjemplo: *alto 65 ancho 45*\n\n(en centimetros, sin contar las ruedas)' + NAV)
+    const esTalla = /^(xs|s|m|l|xl|talla)$/i.test(texto.trim())
+    if (!texto || texto.trim().length < 2 || !nums || esTalla) {
+      await sendMessage(jid, 'Necesito las medidas en centimetros, no la talla.\n\nPor favor mide tu maleta y enviame:\n\n↕️ *Alto* en cm\n↔️ *Ancho* en cm\n\nEjemplo: *alto 65 ancho 45*\n\n(sin contar las ruedas)' + NAV)
       return
     }
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto } })
@@ -119,6 +120,10 @@ async function handleMessage(jid, texto, hasMedia) {
   }
 
   if (session.state === STATES.ESPERANDO_DISENO) {
+    if (!hasMedia && (!texto || texto.trim().length < 2)) {
+      await sendMessage(jid, 'Por favor escríbenos el nombre o referencia del diseno que elegiste del catalogo, o envianos la foto del producto.' + NAV)
+      return
+    }
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
     const precioForro = calcularPrecioDiseno(diseno)
     const totalSinCandado = precioForro + 15000
@@ -135,6 +140,10 @@ async function handleMessage(jid, texto, hasMedia) {
   }
 
   if (session.state === STATES.ESPERANDO_DATOS_PEDIDO) {
+    if (!texto || texto.trim().length < 5) {
+      await sendMessage(jid, 'Por favor envianos tus datos completos en un solo mensaje:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto' + NAV)
+      return
+    }
     setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, datos: texto } })
     await sendMessage(jid, msgOfertaCandado() + NAV)
     return
