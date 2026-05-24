@@ -53,27 +53,20 @@ function calcularTalla(texto) {
   return null
 }
 
-
 function calcularPrecioDiseno(diseno) {
   const d = diseno.toLowerCase()
   if (d.includes('basico') || d.includes('básico')) return 60000
   return 80000
 }
 
-function formatPrecio(n) {
-  return '$' + n.toLocaleString('es-CO')
-}
-
 async function notificarAsesor(jid) {
   const ownersRaw = process.env.OWNER_NUMBERS || ''
-  console.log('OWNER_NUMBERS:', ownersRaw)
   const owners = ownersRaw.split(',').filter(Boolean)
-  console.log('Notificando a', owners.length, 'duenos')
+  const numeroCliente = jid.replace('@s.whatsapp.net', '').replace('@lid', '').replace(/[^0-9]/g, '')
   for (const num of owners) {
     const numClean = num.trim().replace(/[^0-9]/g, '')
-    const ownerJid = numClean + '@s.whatsapp.net'
-    console.log('Enviando alerta a:', ownerJid)
-    await sendMessage(ownerJid, '🔔 *ALERTA: Cliente solicita asesor*\nNumero cliente: ' + jid.replace('@s.whatsapp.net', ''))
+    await sendMessage(numClean + '@s.whatsapp.net',
+      '🔔 *ALERTA: Cliente solicita asesor*\nNumero cliente: +' + numeroCliente + '\nEscribele en WhatsApp: https://wa.me/' + numeroCliente)
   }
 }
 
@@ -81,7 +74,6 @@ async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // SIEMPRE disponible: menu/opciones y asesor
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -89,17 +81,13 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
-
-
-  // Personalizacion solo si el cliente la pide explicitamente
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
-      '🎨 *Personalizacion BlockBag*\n\nIndicanos que diseno quieres y en que parte de la maleta lo deseas.\n\nEscribenos todos los detalles 👇' + NAV)
+      '🎨 *Personalizacion BlockBag*\n\nTen en cuenta que la personalizacion tiene un tiempo de entrega de *8 a 10 dias habiles*.\n\nIndicanos que diseno quieres y en que parte de la maleta lo deseas.\n\nEscribenos todos los detalles 👇' + NAV)
     return
   }
 
-  // ESTADOS ACTIVOS DEL FLUJO
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
     const nums = texto.match(/\d+/g)
     if (!texto || texto.trim().length < 2 || !nums) {
@@ -114,9 +102,8 @@ async function handleMessage(jid, texto, hasMedia) {
   if (session.state === STATES.ESPERANDO_DISENO) {
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
     const precioForro = calcularPrecioDiseno(diseno)
-    const precioEnvio = 15000
-    const totalSinCandado = precioForro + precioEnvio
-    const totalConCandado = precioForro + precioEnvio + 22000
+    const totalSinCandado = precioForro + 15000
+    const totalConCandado = precioForro + 15000 + 22000
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno, precioForro } })
     await sendMessage(jid, 'Diseno registrado 👍\n\n💰 *Resumen de tu pedido:*\n\nForro: $' + precioForro.toLocaleString('es-CO') + '\nEnvio: $15.000\nCandado (opcional): $22.000\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
@@ -124,7 +111,7 @@ async function handleMessage(jid, texto, hasMedia) {
 
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
-    await sendMessage(jid, 'Personalizacion registrada 👍\n\nPara finalizar tu solicitud envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
+    await sendMessage(jid, 'Personalizacion registrada 👍\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
   }
 
@@ -139,8 +126,8 @@ async function handleMessage(jid, texto, hasMedia) {
     const noQuiere = t === 'no' || t === 'no gracias'
     if (quiere || noQuiere) {
       setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, candado: quiere } })
-      const msg = quiere ? 'Candado agregado 🔒 +$' + Number(process.env.CANDADO_PRECIO || 22000).toLocaleString('es-CO') + '\n\n' : 'De acuerdo, sin candado.\n\n'
-      await sendMessage(jid, msg + 'Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
+      const msg = quiere ? 'Candado agregado 🔒 +$22.000\n\n' : 'De acuerdo, sin candado.\n\n'
+      await sendMessage(jid, msg + 'Como deseas pagar?\n\n1 Transferencia (Llave / Nequi)\n2 Pago contra entrega' + NAV)
       return
     }
     await sendMessage(jid, msgOfertaCandado() + NAV)
@@ -165,12 +152,12 @@ async function handleMessage(jid, texto, hasMedia) {
   }
 
   if (session.state === STATES.CONFIRMACION_COD) {
-    if (['si', 'si confirmo', 'confirmo', 'acepto', 'ok', 'dale', 'si acepto'].some(r => t.includes(r))) {
+    if (['si', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
       setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
       await sendMessage(jid, msgPedirDatosEnvio() + NAV)
     } else {
       setSession(jid, { state: STATES.SELECCION_PAGO })
-      await sendMessage(jid, 'Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
+      await sendMessage(jid, 'Como deseas pagar?\n\n1 Transferencia (Llave / Nequi)\n2 Pago contra entrega' + NAV)
     }
     return
   }
@@ -181,8 +168,8 @@ async function handleMessage(jid, texto, hasMedia) {
       await sendMessage(jid, msgPedidoCompleto())
       const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
       for (const num of owners) {
-        await sendMessage(num.trim() + '@s.whatsapp.net',
-          '📸 Comprobante recibido\nCliente: ' + jid.replace('@s.whatsapp.net', '') + '\nPedido: ' + JSON.stringify(session.pedido))
+        await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
+          '📸 Comprobante recibido\nCliente: +' + jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') + '\nPedido: ' + JSON.stringify(session.pedido))
       }
     } else {
       await sendMessage(jid, 'Por favor envia el pantallazo del comprobante de pago para proceder.' + NAV)
@@ -195,13 +182,12 @@ async function handleMessage(jid, texto, hasMedia) {
     await sendMessage(jid, msgPedidoCompleto())
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
     for (const num of owners) {
-      await sendMessage(num.trim() + '@s.whatsapp.net',
-        '📦 Pedido contra entrega\nCliente: ' + jid.replace('@s.whatsapp.net', '') + '\nDatos: ' + texto + '\nPedido: ' + JSON.stringify(session.pedido))
+      await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
+        '📦 Pedido contra entrega\nCliente: +' + jid.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '') + '\nDatos: ' + texto)
     }
     return
   }
 
-  // OPCIONES DEL MENU — sin condicion de estado
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
@@ -241,7 +227,6 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
-  // Fallback
   await sendMenu(jid)
 }
 
@@ -275,12 +260,12 @@ app.post('/webhook/orders/paid', verificarShopify, async (req, res) => { res.sen
 app.post('/webhook/orders/fulfilled', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; const tr = order.fulfillments?.[0] || {}; await sendMessage(phone + '@s.whatsapp.net', msgEnvioDespachado(order, { number: tr.tracking_number, company: tr.tracking_company, url: tr.tracking_url })) } catch (e) { console.error(e.message) } })
 app.post('/webhook/checkout/abandoned', verificarShopify, async (req, res) => { res.sendStatus(200); try { const checkout = req.body; const phone = limpiarTelefono(checkout.billing_address?.phone || checkout.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgCarritoAbandonado(checkout, 1)) } catch (e) { console.error(e.message) } })
 app.post('/api/send', verificarApi, async (req, res) => { try { const { phone, message } = req.body; if (!phone || !message) return res.status(400).json({ error: 'Falta phone o message' }); await sendMessage(limpiarTelefono(phone) + '@s.whatsapp.net', message); res.json({ ok: true }) } catch (e) { res.status(500).json({ error: e.message }) } })
-app.post('/api/reporte', verificarApi, async (req, res) => { try { const statsBase = await getStatsHoy(); const stats = { ...statsBase, ...req.body }; const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats)); res.json({ ok: true }) } catch (e) { res.status(500).json({ error: e.message }) } })
+app.post('/api/reporte', verificarApi, async (req, res) => { try { const statsBase = await getStatsHoy(); const stats = { ...statsBase, ...req.body }; const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net', msgReporteDiario(stats)); res.json({ ok: true }) } catch (e) { res.status(500).json({ error: e.message }) } })
 app.get('/health', (req, res) => res.json({ ok: true, status: getStatus().status }))
 
 const hora = process.env.REPORT_HOUR || '7'
 const minuto = process.env.REPORT_MINUTE || '0'
-cron.schedule(minuto + ' ' + (Number(hora) + 5) + ' * * *', async () => { try { const stats = await getStatsHoy(); const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats)) } catch (e) { console.error(e.message) } }, { timezone: 'UTC' })
+cron.schedule(minuto + ' ' + (Number(hora) + 5) + ' * * *', async () => { try { const stats = await getStatsHoy(); const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net', msgReporteDiario(stats)) } catch (e) { console.error(e.message) } }, { timezone: 'UTC' })
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, async () => {
