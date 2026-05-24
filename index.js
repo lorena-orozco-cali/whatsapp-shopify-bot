@@ -35,12 +35,29 @@ function getSession(jid) {
 function setSession(jid, data) { sessions.set(jid, { ...getSession(jid), ...data }) }
 
 function calcularTalla(texto) {
-  const nums = texto.match(/\d+/g)
-  if (!nums) return null
-  const alto = parseInt(nums[0])
-  if (alto >= 48 && alto <= 50) return 'S'
-  if (alto >= 51 && alto <= 64) return 'M'
-  if (alto >= 65 && alto <= 70) return 'L'
+  const t = texto.toLowerCase()
+  let alto = null
+  let ancho = null
+
+  // Detectar "alto X ancho Y" o "ancho X alto Y" o solo números
+  const altoMatch = t.match(/alto[:\s]*(\d+)/) || t.match(/alto\s+(\d+)/)
+  const anchoMatch = t.match(/ancho[:\s]*(\d+)/) || t.match(/ancho\s+(\d+)/)
+
+  if (altoMatch) alto = parseInt(altoMatch[1])
+  if (anchoMatch) ancho = parseInt(anchoMatch[1])
+
+  // Si no encontró con palabras, usar solo números
+  if (!alto) {
+    const nums = texto.match(/\d+/g)
+    if (nums && nums.length >= 1) alto = parseInt(nums[0])
+    if (nums && nums.length >= 2 && !ancho) ancho = parseInt(nums[1])
+  }
+
+  if (!alto) return null
+
+  if (alto >= 48 && alto <= 57) return 'S'
+  if (alto >= 58 && alto <= 66) return 'M'
+  if (alto >= 67 && alto <= 70) return 'L'
   if (alto >= 71) return 'XL'
   return null
 }
@@ -54,7 +71,7 @@ async function handleMessage(jid, texto, hasMedia) {
     const talla = calcularTalla(texto)
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
     const msg = talla ? `✅ Tu talla recomendada es *${talla}*.\n\n` : `✅ Medidas registradas.\n\n`
-    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nEscríbelo o escribe *catalogo* para ver opciones 👇')
+    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nEscríbelo o visita nuestro catálogo 👇\nhttps://blockbag.co/collections/all')
     return
   }
 
