@@ -67,7 +67,8 @@ En que te puedo ayudar hoy?
 3 Precios
 4 Envios
 5 Formas de pago
-6 Hablar con asesor
+6 Personalizacion (8-10 dias habiles)
+7 Hablar con asesor
 
 Responde con el numero 👇`)
 }
