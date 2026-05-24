@@ -24,13 +24,13 @@ async function connectToWhatsApp() {
   sock.ev.on('creds.update', saveCreds)
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update
-    if (qr) { qrCode = qr; connectionStatus = 'qr_ready'; console.log('📱 QR listo') }
-    if (connection === 'open') { qrCode = null; connectionStatus = 'connected'; console.log('✅ WhatsApp conectado') }
+    if (qr) { qrCode = qr; connectionStatus = 'qr_ready'; console.log('QR listo') }
+    if (connection === 'open') { qrCode = null; connectionStatus = 'connected'; console.log('WhatsApp conectado') }
     if (connection === 'close') {
       connectionStatus = 'disconnected'
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
       if (shouldReconnect) setTimeout(connectToWhatsApp, 5000)
-      else { connectionStatus = 'logged_out'; console.log('❌ Sesión cerrada') }
+      else { connectionStatus = 'logged_out'; console.log('Sesion cerrada') }
     }
   })
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
@@ -51,37 +51,25 @@ async function connectToWhatsApp() {
   return sock
 }
 
-async function sendMenu(jid) {
-  await sendMessage(jid,
-`🧳 *BlockBag — Protectores para maletas*
-
-¿En qué te puedo ayudar hoy?
-
-1️⃣ *Tallas y medidas*
-2️⃣ *Materiales*
-3️⃣ *Precios*
-4️⃣ *Envíos*
-5️⃣ *Formas de pago*
-6️⃣ *Hablar con asesor*
-
-_Responde con el número_ 👇`)
+async function sendMessage(jid, text) {
+  if (!sock || connectionStatus !== 'connected') return
+  await sock.sendMessage(jid, { text })
 }
 
 async function sendMenu(jid) {
   await sendMessage(jid,
 `🧳 *BlockBag — Protectores para maletas*
 
-¿En qué te puedo ayudar hoy?
+En que te puedo ayudar hoy?
 
-1️⃣ *Tallas y medidas*
-2️⃣ *Materiales*
-3️⃣ *Precios*
-4️⃣ *Envíos*
-5️⃣ *Formas de pago*
-6️⃣ *Personalización*
-7️⃣ *Hablar con asesor*
+1 Tallas y medidas
+2 Materiales
+3 Precios
+4 Envios
+5 Formas de pago
+6 Hablar con asesor
 
-_Responde con el número_ 👇`)
+Responde con el numero 👇`)
 }
 
 function downloadImage(url) {
@@ -99,13 +87,12 @@ function downloadImage(url) {
 async function sendImage(jid, imageUrl, caption) {
   if (!sock || connectionStatus !== 'connected') return
   try {
-    console.log(`📥 Descargando imagen: ${imageUrl}`)
     const buffer = await downloadImage(imageUrl)
     await sock.sendMessage(jid, { image: buffer, mimetype: 'image/jpeg', caption: caption || '' })
-    console.log(`✅ Imagen enviada a ${jid}`)
+    console.log('Imagen enviada a ' + jid)
   } catch (err) {
-    console.error('❌ Error imagen:', err.message)
-    await sock.sendMessage(jid, { text: (caption || '') + '\n\n👉 ' + imageUrl })
+    console.error('Error imagen:', err.message)
+    await sock.sendMessage(jid, { text: (caption || '') + '\n\n' + imageUrl })
   }
 }
 
