@@ -53,15 +53,10 @@ function calcularTalla(texto) {
   return null
 }
 
-
 function calcularPrecioDiseno(diseno) {
   const d = diseno.toLowerCase()
   if (d.includes('basico') || d.includes('básico')) return 60000
   return 80000
-}
-
-function formatPrecio(n) {
-  return '$' + n.toLocaleString('es-CO')
 }
 
 async function notificarAsesor(jid) {
@@ -76,7 +71,6 @@ async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // SIEMPRE disponible: menu/opciones y asesor
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -84,35 +78,24 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
-  if (t === 'asesor' || t === '7' || t.includes('asesor') || t.includes('hablar')) {
-    await sendMessage(jid, '👤 *Un asesor te atenderá en breve.*\n\nGracias por tu paciencia 🙏' + NAV)
-    await notificarAsesor(jid)
-    return
-  }
-
-  // Personalizacion solo si el cliente la pide explicitamente
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
-      '🎨 *Personalizacion BlockBag*\n\nIndicanos que diseno quieres y en que parte de la maleta lo deseas.\n\nEscribenos todos los detalles 👇' + NAV)
+      '🎨 *Personalizacion BlockBag*\n\nTen en cuenta que la personalizacion tiene un tiempo de entrega de *8 a 10 dias habiles*.\n\nIndicanos que diseno quieres y en que parte de la maleta lo deseas.\n\nEscribenos todos los detalles 👇' + NAV)
     return
   }
 
-  // ESTADOS ACTIVOS DEL FLUJO
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
-    const talla = calcularTalla(texto)
-    setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
-    const msg = talla ? 'Con esas medidas tu talla recomendada es *' + talla + '*.\n\n' : 'Medidas registradas.\n\n'
-    await sendMessage(jid, msg + 'Que diseno deseas para tu forro?\n\nVisita nuestro catalogo:\nhttps://blockbag.co/collections/all\n\nEscribenos la referencia o mandanos la foto del producto que quieres 👇' + NAV)
+    setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto } })
+    await sendMessage(jid, 'Medidas registradas.\n\nQue diseno deseas para tu forro?\n\nVisita nuestro catalogo:\nhttps://blockbag.co/collections/all\n\nEscribenos la referencia o mandanos la foto del producto que quieres 👇' + NAV)
     return
   }
 
   if (session.state === STATES.ESPERANDO_DISENO) {
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
     const precioForro = calcularPrecioDiseno(diseno)
-    const precioEnvio = 15000
-    const totalSinCandado = precioForro + precioEnvio
-    const totalConCandado = precioForro + precioEnvio + 22000
+    const totalSinCandado = precioForro + 15000
+    const totalConCandado = precioForro + 15000 + 22000
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno, precioForro } })
     await sendMessage(jid, 'Diseno registrado 👍\n\n💰 *Resumen de tu pedido:*\n\nForro: $' + precioForro.toLocaleString('es-CO') + '\nEnvio: $15.000\nCandado (opcional): $22.000\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
@@ -120,7 +103,7 @@ async function handleMessage(jid, texto, hasMedia) {
 
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
-    await sendMessage(jid, 'Personalizacion registrada 👍\n\nPara finalizar tu solicitud envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
+    await sendMessage(jid, 'Personalizacion registrada 👍\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
   }
 
@@ -135,8 +118,8 @@ async function handleMessage(jid, texto, hasMedia) {
     const noQuiere = t === 'no' || t === 'no gracias'
     if (quiere || noQuiere) {
       setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, candado: quiere } })
-      const msg = quiere ? 'Candado agregado 🔒 +$' + Number(process.env.CANDADO_PRECIO || 22000).toLocaleString('es-CO') + '\n\n' : 'De acuerdo, sin candado.\n\n'
-      await sendMessage(jid, msg + 'Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
+      const msg = quiere ? 'Candado agregado 🔒 +$22.000\n\n' : 'De acuerdo, sin candado.\n\n'
+      await sendMessage(jid, msg + 'Como deseas pagar?\n\n1 Transferencia (Llave / Nequi)\n2 Pago contra entrega' + NAV)
       return
     }
     await sendMessage(jid, msgOfertaCandado() + NAV)
@@ -161,12 +144,12 @@ async function handleMessage(jid, texto, hasMedia) {
   }
 
   if (session.state === STATES.CONFIRMACION_COD) {
-    if (['si', 'si confirmo', 'confirmo', 'acepto', 'ok', 'dale', 'si acepto'].some(r => t.includes(r))) {
+    if (['si', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
       setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
       await sendMessage(jid, msgPedirDatosEnvio() + NAV)
     } else {
       setSession(jid, { state: STATES.SELECCION_PAGO })
-      await sendMessage(jid, 'Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
+      await sendMessage(jid, 'Como deseas pagar?\n\n1 Transferencia (Llave / Nequi)\n2 Pago contra entrega' + NAV)
     }
     return
   }
@@ -197,7 +180,6 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
-  // OPCIONES DEL MENU — sin condicion de estado
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
@@ -211,7 +193,7 @@ async function handleMessage(jid, texto, hasMedia) {
   }
 
   if (t === '3' || t.includes('precio') || t.includes('valor') || t.includes('costo')) {
-    await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscribenos para cotizar segun la talla y personalizacion que necesites.\n\nUn asesor te responde de inmediato.' + NAV)
+    await sendMessage(jid, '💰 *Precios BlockBag*\n\n🛍️ Ver catalogo completo:\nhttps://blockbag.co/collections/all\n\n*Forros con diseno:* $80.000\n*Forros basicos:* $60.000\n*Envio nacional:* $15.000\n*Candado de seguridad:* $22.000\n\n*Combos x2:*\nTalla S x2: $100.000\nTalla M x2: $110.000\nTalla L x2: $120.000\n\n*Accesorios:*\nBascula para maletas: $25.000\nPortapasaporte RFID: $40.000\nPortapasaporte basico: $20.000\nEtiqueta para maleta: $12.000\nProtector de ruedas: $25.000' + NAV)
     return
   }
 
@@ -231,7 +213,12 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
-  // Fallback
+  if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('hablar con')) {
+    await sendMessage(jid, '👤 *Un asesor te atendera en breve.*\n\nGracias por tu paciencia 🙏' + NAV)
+    await notificarAsesor(jid)
+    return
+  }
+
   await sendMenu(jid)
 }
 
