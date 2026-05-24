@@ -37,24 +37,16 @@ function setSession(jid, data) { sessions.set(jid, { ...getSession(jid), ...data
 function calcularTalla(texto) {
   const t = texto.toLowerCase()
   let alto = null
-  let ancho = null
 
-  // Detectar "alto X ancho Y" o "ancho X alto Y" o solo números
-  const altoMatch = t.match(/alto[:\s]*(\d+)/) || t.match(/alto\s+(\d+)/)
-  const anchoMatch = t.match(/ancho[:\s]*(\d+)/) || t.match(/ancho\s+(\d+)/)
-
+  const altoMatch = t.match(/alto[\s:]*(\d+)/)
   if (altoMatch) alto = parseInt(altoMatch[1])
-  if (anchoMatch) ancho = parseInt(anchoMatch[1])
 
-  // Si no encontró con palabras, usar solo números
   if (!alto) {
     const nums = texto.match(/\d+/g)
     if (nums && nums.length >= 1) alto = parseInt(nums[0])
-    if (nums && nums.length >= 2 && !ancho) ancho = parseInt(nums[1])
   }
 
   if (!alto) return null
-
   if (alto >= 48 && alto <= 57) return 'S'
   if (alto >= 58 && alto <= 66) return 'M'
   if (alto >= 67 && alto <= 70) return 'L'
@@ -66,29 +58,24 @@ async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // PRIMERO: estados activos del flujo
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
     const talla = calcularTalla(texto)
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
     const msg = talla ? `✅ Tu talla recomendada es *${talla}*.\n\n` : `✅ Medidas registradas.\n\n`
-    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nVisita nuestro catálogo y escríbenos la referencia o mándanos la foto del producto que quieres 👇\nhttps://blockbag.co/collections/all' + '
-
-_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
+    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nVisita nuestro catálogo y escríbenos la referencia o mándanos la foto del producto que quieres 👇\nhttps://blockbag.co/collections/all\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
     return
   }
 
   if (session.state === STATES.ESPERANDO_DISENO) {
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno } })
-    await sendMessage(jid, `✅ *Diseño registrado* 👍\n\n📝 Para finalizar envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇
-
-_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`)
+    await sendMessage(jid, '✅ *Diseño registrado* 👍\n\n📝 Para finalizar envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
     return
   }
 
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
-    await sendMessage(jid, `✅ *Personalización:* ${texto}\n\n📝 Envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇`)
+    await sendMessage(jid, `✅ *Personalización:* ${texto}\n\n📝 Para finalizar envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`)
     return
   }
 
@@ -159,7 +146,6 @@ _Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`
     return
   }
 
-  // SEGUNDO: asesor siempre disponible
   if (t === '7' || t === 'asesor' || t.includes('asesor')) {
     await sendMessage(jid, '👤 *Conectando con asesor...*\n\nEn breve te atendemos 🙏')
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
@@ -167,10 +153,9 @@ _Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`
     return
   }
 
-  // TERCERO: opciones numéricas del menú — SIN condición de estado
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
-    await sendImage(jid, process.env.IMG_MEDIDAS_URL, '📏 *Guía de medidas*\n\nMide tu maleta *sin contar ruedas*:\n\n↕️ Alto en cm\n↔️ Ancho en cm\n\nEjemplo: _65 45_')
+    await sendImage(jid, process.env.IMG_MEDIDAS_URL, '📏 *Guía de medidas*\n\nMide tu maleta *sin contar ruedas*:\n\n↕️ Alto en cm\n↔️ Ancho en cm\n\nEjemplo: alto 65 ancho 45')
     return
   }
   if (t === '2' || t.includes('material')) {
@@ -195,16 +180,11 @@ _Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, '🎨 *Personalización*\n\nIndícanos qué diseño y en qué parte 👇')
     return
   }
-
-  // Catalogo
   if (t === 'catalogo' || t.includes('catálogo') || t.includes('catalogo')) {
-    await sendMessage(jid, '🛍️ *Catálogo BlockBag*\n\nhttps://blockbag.co/collections/all\n\nElige tu diseño y envíanos la referencia o la foto del producto.
-
-_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
+    await sendMessage(jid, '🛍️ *Catálogo BlockBag*\n\nhttps://blockbag.co/collections/all\n\nElige tu diseño y envíanos la referencia o la foto del producto.\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
     return
   }
 
-  // CUARTO: trigger de menú
   const esMenu = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas'].some(w => t.includes(w))
   if (esMenu) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -242,7 +222,7 @@ app.get('/qr', async (req, res) => {
 
 app.post('/webhook/orders/create', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgPedidoNuevo(order)) } catch (e) { console.error(e.message) } })
 app.post('/webhook/orders/paid', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgPagoConfirmado(order)) } catch (e) { console.error(e.message) } })
-app.post('/webhook/orders/fulfilled', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; const t = order.fulfillments?.[0] || {}; await sendMessage(phone + '@s.whatsapp.net', msgEnvioDespachado(order, { number: t.tracking_number, company: t.tracking_company, url: t.tracking_url })) } catch (e) { console.error(e.message) } })
+app.post('/webhook/orders/fulfilled', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; const tr = order.fulfillments?.[0] || {}; await sendMessage(phone + '@s.whatsapp.net', msgEnvioDespachado(order, { number: tr.tracking_number, company: tr.tracking_company, url: tr.tracking_url })) } catch (e) { console.error(e.message) } })
 app.post('/webhook/checkout/abandoned', verificarShopify, async (req, res) => { res.sendStatus(200); try { const checkout = req.body; const phone = limpiarTelefono(checkout.billing_address?.phone || checkout.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgCarritoAbandonado(checkout, 1)) } catch (e) { console.error(e.message) } })
 app.post('/api/send', verificarApi, async (req, res) => { try { const { phone, message } = req.body; if (!phone || !message) return res.status(400).json({ error: 'Falta phone o message' }); await sendMessage(limpiarTelefono(phone) + '@s.whatsapp.net', message); res.json({ ok: true }) } catch (e) { res.status(500).json({ error: e.message }) } })
 app.post('/api/reporte', verificarApi, async (req, res) => { try { const statsBase = await getStatsHoy(); const stats = { ...statsBase, ...req.body }; const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats)); res.json({ ok: true }) } catch (e) { res.status(500).json({ error: e.message }) } })
