@@ -28,6 +28,8 @@ const STATES = {
   ESPERANDO_DATOS_ENVIO: 'ESPERANDO_DATOS_ENVIO',
 }
 
+const NAV = '\n\n_Escribe *opciones* para ver el menu o *asesor* para hablar con nosotros_'
+
 function getSession(jid) {
   if (!sessions.has(jid)) sessions.set(jid, { state: STATES.MENU, pedido: { candado: false } })
   return sessions.get(jid)
@@ -37,15 +39,12 @@ function setSession(jid, data) { sessions.set(jid, { ...getSession(jid), ...data
 function calcularTalla(texto) {
   const t = texto.toLowerCase()
   let alto = null
-
   const altoMatch = t.match(/alto[\s:]*(\d+)/)
   if (altoMatch) alto = parseInt(altoMatch[1])
-
   if (!alto) {
     const nums = texto.match(/\d+/g)
-    if (nums && nums.length >= 1) alto = parseInt(nums[0])
+    if (nums) alto = parseInt(nums[0])
   }
-
   if (!alto) return null
   if (alto >= 48 && alto <= 57) return 'S'
   if (alto >= 58 && alto <= 66) return 'M'
@@ -54,47 +53,75 @@ function calcularTalla(texto) {
   return null
 }
 
+async function notificarAsesor(jid) {
+  const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
+  for (const num of owners) {
+    await sendMessage(num.trim() + '@s.whatsapp.net',
+      '🔔 *ALERTA: Cliente solicita asesor*\nNumero: ' + jid.replace('@s.whatsapp.net', ''))
+  }
+}
+
 async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
+  if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
+      t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
+    setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
+    await sendMenu(jid)
+    return
+  }
+
+  if (t === 'asesor' || t === '7' || t.includes('asesor') || t.includes('hablar')) {
+    await sendMessage(jid, '👤 *Un asesor te atenderá en breve.*\n\nGracias por tu paciencia 🙏' + NAV)
+    await notificarAsesor(jid)
+    return
+  }
+
+  if (t.includes('personaliz')) {
+    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
+    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
+      '🎨 *Personalizacion BlockBag*\n\nIndicanos que diseno quieres y en que parte de la maleta lo deseas.\n\nEscribenos todos los detalles 👇' + NAV)
+    return
+  }
+
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
     const talla = calcularTalla(texto)
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
-    const msg = talla ? `✅ Tu talla recomendada es *${talla}*.\n\n` : `✅ Medidas registradas.\n\n`
-    await sendMessage(jid, msg + '¿Qué diseño deseas?\n\nVisita nuestro catálogo y escríbenos la referencia o mándanos la foto del producto que quieres 👇\nhttps://blockbag.co/collections/all\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
+    const msg = talla ? 'Con esas medidas tu talla recomendada es *' + talla + '*.\n\n' : 'Medidas registradas.\n\n'
+    await sendMessage(jid, msg + 'Que diseno deseas para tu forro?\n\nVisita nuestro catalogo:\nhttps://blockbag.co/collections/all\n\nEscribenos la referencia o mandanos la foto del producto que quieres 👇' + NAV)
     return
   }
 
   if (session.state === STATES.ESPERANDO_DISENO) {
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno } })
-    await sendMessage(jid, '✅ *Diseño registrado* 👍\n\n📝 Para finalizar envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
+    await sendMessage(jid, 'Diseno registrado 👍\n\nPara finalizar tu solicitud envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
   }
 
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
-    await sendMessage(jid, `✅ *Personalización:* ${texto}\n\n📝 Para finalizar envíanos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono\n\nTodo en un mensaje 👇\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬`)
+    await sendMessage(jid, 'Personalizacion registrada 👍\n\nPara finalizar tu solicitud envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
   }
 
   if (session.state === STATES.ESPERANDO_DATOS_PEDIDO) {
     setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, datos: texto } })
-    await sendMessage(jid, msgOfertaCandado())
+    await sendMessage(jid, msgOfertaCandado() + NAV)
     return
   }
 
   if (session.state === STATES.OFERTA_CANDADO) {
-    const quiere = ['si', 'sí', 'claro', 'dale', 'yes'].some(r => t.includes(r))
-    const noQuiere = t === 'no' || t.startsWith('no ')
+    const quiere = ['si', 'si quiero', 'claro', 'dale', 'yes', 'sí'].some(r => t === r || t.startsWith(r))
+    const noQuiere = t === 'no' || t === 'no gracias'
     if (quiere || noQuiere) {
       setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, candado: quiere } })
-      const msg = quiere ? `✅ Candado agregado 🔒\n\n` : `Sin candado.\n\n`
-      await sendMessage(jid, msg + '💳 ¿Cómo deseas pagar?\n\n1️⃣ Transferencia\n2️⃣ Contra entrega')
+      const msg = quiere ? 'Candado agregado 🔒 +$' + Number(process.env.CANDADO_PRECIO || 22000).toLocaleString('es-CO') + '\n\n' : 'De acuerdo, sin candado.\n\n'
+      await sendMessage(jid, msg + 'Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
       return
     }
-    await sendMessage(jid, msgOfertaCandado())
+    await sendMessage(jid, msgOfertaCandado() + NAV)
     return
   }
 
@@ -103,25 +130,25 @@ async function handleMessage(jid, texto, hasMedia) {
       setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE })
       const day = new Date().getDate()
       const imgUrl = day <= 15 ? process.env.PAGO_Q1_IMAGEN_URL : process.env.PAGO_Q2_IMAGEN_URL
-      await sendImage(jid, imgUrl, msgPagosDinamicos())
+      await sendImage(jid, imgUrl, msgPagosDinamicos() + NAV)
       return
     }
     if (t === '2' || t.includes('contra') || t.includes('efectivo')) {
       setSession(jid, { state: STATES.CONFIRMACION_COD })
-      await sendMessage(jid, msgContraEntrega())
+      await sendMessage(jid, msgContraEntrega() + NAV)
       return
     }
-    await sendMessage(jid, '💳 Responde *1* transferencia o *2* contra entrega.')
+    await sendMessage(jid, 'Responde *1* para transferencia o *2* para contra entrega.' + NAV)
     return
   }
 
   if (session.state === STATES.CONFIRMACION_COD) {
-    if (['si', 'sí', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
+    if (['si', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
       setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
-      await sendMessage(jid, msgPedirDatosEnvio())
+      await sendMessage(jid, msgPedirDatosEnvio() + NAV)
     } else {
       setSession(jid, { state: STATES.SELECCION_PAGO })
-      await sendMessage(jid, '💳 Responde *1* transferencia o *2* contra entrega.')
+      await sendMessage(jid, 'Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
     }
     return
   }
@@ -131,9 +158,12 @@ async function handleMessage(jid, texto, hasMedia) {
       setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
       await sendMessage(jid, msgPedidoCompleto())
       const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-      for (const num of owners) await sendMessage(`${num.trim()}@s.whatsapp.net`, `📸 Comprobante\nCliente: ${jid.replace('@s.whatsapp.net', '')}\nPedido: ${JSON.stringify(session.pedido)}`)
+      for (const num of owners) {
+        await sendMessage(num.trim() + '@s.whatsapp.net',
+          '📸 Comprobante recibido\nCliente: ' + jid.replace('@s.whatsapp.net', '') + '\nPedido: ' + JSON.stringify(session.pedido))
+      }
     } else {
-      await sendMessage(jid, '📸 Envía el pantallazo del comprobante.')
+      await sendMessage(jid, 'Por favor envia el pantallazo del comprobante de pago para proceder.' + NAV)
     }
     return
   }
@@ -142,53 +172,43 @@ async function handleMessage(jid, texto, hasMedia) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
     await sendMessage(jid, msgPedidoCompleto())
     const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-    for (const num of owners) await sendMessage(`${num.trim()}@s.whatsapp.net`, `📦 Contra entrega\nCliente: ${jid.replace('@s.whatsapp.net', '')}\nDatos: ${texto}`)
-    return
-  }
-
-  if (t === '7' || t === 'asesor' || t.includes('asesor')) {
-    await sendMessage(jid, '👤 *Conectando con asesor...*\n\nEn breve te atendemos 🙏')
-    const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-    for (const num of owners) await sendMessage(`${num.trim()}@s.whatsapp.net`, `👤 Asesor solicitado\nNúmero: ${jid.replace('@s.whatsapp.net', '')}`)
+    for (const num of owners) {
+      await sendMessage(num.trim() + '@s.whatsapp.net',
+        '📦 Pedido contra entrega\nCliente: ' + jid.replace('@s.whatsapp.net', '') + '\nDatos: ' + texto + '\nPedido: ' + JSON.stringify(session.pedido))
+    }
     return
   }
 
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
-    await sendImage(jid, process.env.IMG_MEDIDAS_URL, '📏 *Guía de medidas*\n\nMide tu maleta *sin contar ruedas*:\n\n↕️ Alto en cm\n↔️ Ancho en cm\n\nEjemplo: alto 65 ancho 45')
-    return
-  }
-  if (t === '2' || t.includes('material')) {
-    await sendMessage(jid, msgMateriales())
-    return
-  }
-  if (t === '3' || t.includes('precio')) {
-    await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscribe *asesor* para cotizar.')
-    return
-  }
-  if (t === '4' || t.includes('envío') || t.includes('envio')) {
-    await sendMessage(jid, msgEnvios())
-    return
-  }
-  if (t === '5' || t.includes('forma') || t.includes('pago')) {
-    setSession(jid, { state: STATES.OFERTA_CANDADO })
-    await sendMessage(jid, msgOfertaCandado())
-    return
-  }
-  if (t === '6' || t.includes('personaliz')) {
-    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
-    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, '🎨 *Personalización*\n\nIndícanos qué diseño y en qué parte 👇')
-    return
-  }
-  if (t === 'catalogo' || t.includes('catálogo') || t.includes('catalogo')) {
-    await sendMessage(jid, '🛍️ *Catálogo BlockBag*\n\nhttps://blockbag.co/collections/all\n\nElige tu diseño y envíanos la referencia o la foto del producto.\n\n_Escribe *menu* para volver al inicio o *asesor* para hablar con nosotros_ 💬')
+    await sendImage(jid, process.env.IMG_MEDIDAS_URL,
+      'Guia de medidas BlockBag\n\nMide tu maleta sin contar las ruedas y enviame:\n\nAlto en cm\nAncho en cm\n\nEjemplo: alto 65 ancho 45' + NAV)
     return
   }
 
-  const esMenu = ['hola', 'menu', 'menú', 'inicio', 'start', 'hi', 'buenas'].some(w => t.includes(w))
-  if (esMenu) {
-    setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
-    await sendMenu(jid)
+  if (t === '2' || t.includes('material')) {
+    await sendMessage(jid, msgMateriales() + NAV)
+    return
+  }
+
+  if (t === '3' || t.includes('precio') || t.includes('valor') || t.includes('costo')) {
+    await sendMessage(jid, '💰 *Precios BlockBag*\n\nEscribenos para cotizar segun la talla y personalizacion que necesites.\n\nUn asesor te responde de inmediato.' + NAV)
+    return
+  }
+
+  if (t === '4' || t.includes('envio') || t.includes('envío') || t.includes('despacho') || t.includes('entrega')) {
+    await sendMessage(jid, msgEnvios() + NAV)
+    return
+  }
+
+  if (t === '5' || t.includes('pago') || t.includes('forma de pago') || t.includes('transferencia') || t.includes('nequi')) {
+    setSession(jid, { state: STATES.OFERTA_CANDADO })
+    await sendMessage(jid, msgOfertaCandado() + NAV)
+    return
+  }
+
+  if (t === '6' || t.includes('catalogo') || t.includes('catálogo')) {
+    await sendMessage(jid, '🛍️ *Catalogo BlockBag*\n\nhttps://blockbag.co/collections/all\n\nElige tu diseno y envianos la referencia o la foto del producto.' + NAV)
     return
   }
 
@@ -199,7 +219,7 @@ function verificarShopify(req, res, next) {
   const hmac = req.headers['x-shopify-hmac-sha256']
   if (!hmac) return res.status(401).json({ error: 'Sin firma' })
   const digest = crypto.createHmac('sha256', process.env.SHOPIFY_WEBHOOK_SECRET).update(req.rawBody).digest('base64')
-  if (digest !== hmac) return res.status(401).json({ error: 'Firma inválida' })
+  if (digest !== hmac) return res.status(401).json({ error: 'Firma invalida' })
   next()
 }
 function verificarApi(req, res, next) {
@@ -209,15 +229,15 @@ function verificarApi(req, res, next) {
 
 app.get('/', (req, res) => {
   const { status } = getStatus()
-  res.send(`<html><head><title>BlockBag Bot</title><meta http-equiv="refresh" content="5"><style>body{font-family:sans-serif;text-align:center;padding:40px;background:#f0f2f5}h1{color:#075E54}.status{padding:12px 24px;border-radius:20px;display:inline-block;font-weight:bold}.connected{background:#d4edda;color:#155724}.disconnected{background:#fff3cd;color:#856404}</style></head><body><h1>🤖 BlockBag WhatsApp Bot</h1><p class="status ${status === 'connected' ? 'connected' : 'disconnected'}">${status === 'connected' ? '✅ Conectado' : status === 'qr_ready' ? '📱 Escanea el QR en /qr' : '⏳ Conectando...'}</p>${status !== 'connected' ? '<p><a href="/qr">👉 Ver código QR</a></p>' : ''}</body></html>`)
+  res.send('<html><head><title>BlockBag Bot</title><meta http-equiv="refresh" content="5"><style>body{font-family:sans-serif;text-align:center;padding:40px;background:#f0f2f5}h1{color:#075E54}.status{padding:12px 24px;border-radius:20px;display:inline-block;font-weight:bold}.connected{background:#d4edda;color:#155724}.disconnected{background:#fff3cd;color:#856404}</style></head><body><h1>BlockBag WhatsApp Bot</h1><p class="status ' + (status === 'connected' ? 'connected' : 'disconnected') + '">' + (status === 'connected' ? 'Conectado' : status === 'qr_ready' ? 'Escanea el QR en /qr' : 'Conectando...') + '</p>' + (status !== 'connected' ? '<p><a href="/qr">Ver codigo QR</a></p>' : '') + '</body></html>')
 })
 
 app.get('/qr', async (req, res) => {
   const { status, qr } = getStatus()
-  if (status === 'connected') return res.send('<h2 style="font-family:sans-serif;color:green;text-align:center">✅ Ya conectado</h2>')
-  if (!qr) return res.send('<h2 style="font-family:sans-serif;text-align:center">⏳ Generando QR... recarga en 5 seg</h2><meta http-equiv="refresh" content="5">')
+  if (status === 'connected') return res.send('<h2 style="font-family:sans-serif;color:green;text-align:center">Ya conectado</h2>')
+  if (!qr) return res.send('<h2 style="font-family:sans-serif;text-align:center">Generando QR... recarga en 5 seg</h2><meta http-equiv="refresh" content="5">')
   const img = await QRCode.toDataURL(qr, { width: 300 })
-  res.send(`<html><head><title>QR</title><meta http-equiv="refresh" content="30"></head><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>📱 Escanea con WhatsApp</h2><img src="${img}" style="border:4px solid #075E54;border-radius:12px"/></body></html>`)
+  res.send('<html><head><title>QR</title><meta http-equiv="refresh" content="30"></head><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>Escanea con WhatsApp</h2><img src="' + img + '" style="border:4px solid #075E54;border-radius:12px"/></body></html>')
 })
 
 app.post('/webhook/orders/create', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgPedidoNuevo(order)) } catch (e) { console.error(e.message) } })
@@ -230,11 +250,11 @@ app.get('/health', (req, res) => res.json({ ok: true, status: getStatus().status
 
 const hora = process.env.REPORT_HOUR || '7'
 const minuto = process.env.REPORT_MINUTE || '0'
-cron.schedule(`${minuto} ${Number(hora) + 5} * * *`, async () => { try { const stats = await getStatsHoy(); const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats)) } catch (e) { console.error(e.message) } }, { timezone: 'UTC' })
+cron.schedule(minuto + ' ' + (Number(hora) + 5) + ' * * *', async () => { try { const stats = await getStatsHoy(); const numeros = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean); for (const num of numeros) await sendMessage(num.trim() + '@s.whatsapp.net', msgReporteDiario(stats)) } catch (e) { console.error(e.message) } }, { timezone: 'UTC' })
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, async () => {
-  console.log(`🚀 BlockBag Bot corriendo en puerto ${PORT}`)
+  console.log('BlockBag Bot corriendo en puerto ' + PORT)
   setMessageHandler(handleMessage)
   await connectToWhatsApp()
 })
