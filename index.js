@@ -53,6 +53,17 @@ function calcularTalla(texto) {
   return null
 }
 
+
+function calcularPrecioDiseno(diseno) {
+  const d = diseno.toLowerCase()
+  if (d.includes('basico') || d.includes('básico')) return 60000
+  return 80000
+}
+
+function formatPrecio(n) {
+  return '$' + n.toLocaleString('es-CO')
+}
+
 async function notificarAsesor(jid) {
   const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
   for (const num of owners) {
@@ -65,6 +76,7 @@ async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
+  // SIEMPRE disponible: menu/opciones y asesor
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -78,6 +90,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // Personalizacion solo si el cliente la pide explicitamente
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
@@ -85,6 +98,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // ESTADOS ACTIVOS DEL FLUJO
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
     const talla = calcularTalla(texto)
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
@@ -95,8 +109,12 @@ async function handleMessage(jid, texto, hasMedia) {
 
   if (session.state === STATES.ESPERANDO_DISENO) {
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
-    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno } })
-    await sendMessage(jid, 'Diseno registrado 👍\n\nPara finalizar tu solicitud envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
+    const precioForro = calcularPrecioDiseno(diseno)
+    const precioEnvio = 15000
+    const totalSinCandado = precioForro + precioEnvio
+    const totalConCandado = precioForro + precioEnvio + 22000
+    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno, precioForro } })
+    await sendMessage(jid, 'Diseno registrado 👍\n\n💰 *Resumen de tu pedido:*\n\nForro: $' + precioForro.toLocaleString('es-CO') + '\nEnvio: $15.000\nCandado (opcional): $22.000\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
   }
 
@@ -143,7 +161,7 @@ async function handleMessage(jid, texto, hasMedia) {
   }
 
   if (session.state === STATES.CONFIRMACION_COD) {
-    if (['si', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
+    if (['si', 'si confirmo', 'confirmo', 'acepto', 'ok', 'dale', 'si acepto'].some(r => t.includes(r))) {
       setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
       await sendMessage(jid, msgPedirDatosEnvio() + NAV)
     } else {
@@ -179,6 +197,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // OPCIONES DEL MENU — sin condicion de estado
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
@@ -212,6 +231,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // Fallback
   await sendMenu(jid)
 }
 
