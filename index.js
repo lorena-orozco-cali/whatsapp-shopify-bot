@@ -11,6 +11,70 @@ const { msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
         msgContraEntrega, msgPedirDatosEnvio, msgPedidoCompleto } = require('./messages')
 const { limpiarTelefono, getStatsHoy } = require('./shopify')
 
+
+const axios = require('axios')
+
+const SHOPIFY_STORE = process.env.SHOPIFY_STORE || 'blogbagshop'
+const SHOPIFY_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN
+
+async function buscarProducto(nombre) {
+  try {
+    const res = await axios.get(
+      'https://' + SHOPIFY_STORE + '.myshopify.com/admin/api/2024-01/products.json',
+      {
+        headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN },
+        params: { title: nombre, limit: 5 }
+      }
+    )
+    const products = res.data.products
+    if (products && products.length > 0) {
+      const product = products[0]
+      const variant = product.variants[0]
+      return {
+        variantId: variant.id,
+        title: product.title,
+        price: variant.price,
+        found: true
+      }
+    }
+    return { found: false }
+  } catch (err) {
+    console.error('Error buscando producto:', err.message)
+    return { found: false }
+  }
+}
+
+async function crearCheckout(variantId, quantity, candado) {
+  try {
+    const lineItems = [{ variant_id: variantId, quantity: quantity || 1 }]
+    
+    // Agregar candado si lo quiere
+    if (candado) {
+      // Buscar producto candado
+      const candadoRes = await axios.get(
+        'https://' + SHOPIFY_STORE + '.myshopify.com/admin/api/2024-01/products.json',
+        {
+          headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN },
+          params: { title: 'candado', limit: 1 }
+        }
+      )
+      if (candadoRes.data.products && candadoRes.data.products.length > 0) {
+        lineItems.push({ variant_id: candadoRes.data.products[0].variants[0].id, quantity: 1 })
+      }
+    }
+
+    const res = await axios.post(
+      'https://' + SHOPIFY_STORE + '.myshopify.com/admin/api/2024-01/checkouts.json',
+      { checkout: { line_items: lineItems } },
+      { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN, 'Content-Type': 'application/json' } }
+    )
+    return res.data.checkout?.web_url || null
+  } catch (err) {
+    console.error('Error creando checkout:', err.message)
+    return null
+  }
+}
+
 const app = express()
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }))
 
@@ -74,6 +138,7 @@ async function handleMessage(jid, texto, hasMedia) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
+  // Menu trigger
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -81,12 +146,14 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // Asesor — pedir numero primero
   if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('hablar con')) {
     setSession(jid, { state: STATES.ESPERANDO_NUMERO_ASESOR })
-    await sendMessage(jid, '👤 *Hablar con un asesor*\n\nPor favor escríbenos tu número de celular para que un asesor te contacte.\n\nEjemplo: *3001234567*')
+    await sendMessage(jid, '👤 *Hablar con un asesor*\n\nPor favor escríbenos tu número de celular (con indicativo 57) para que un asesor te contacte.\n\nEjemplo: *573001234567*')
     return
   }
 
+  // Personalizacion
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
@@ -94,19 +161,21 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // ESPERANDO NUMERO ASESOR
   if (session.state === STATES.ESPERANDO_NUMERO_ASESOR) {
     const nums = texto.match(/\d+/g)
     if (!nums || nums.join('').length < 7) {
-      await sendMessage(jid, 'Por favor escríbenos tu número de celular.\n\nEjemplo: *3001234567*')
+      await sendMessage(jid, 'Por favor escríbenos tu número de celular.\n\nEjemplo: *573001234567*')
       return
     }
     const numeroCliente = nums.join('')
     setSession(jid, { state: STATES.MENU })
-    await sendMessage(jid, '✅ Listo. Un asesor de BlockBag te contactará pronto. Gracias por tu paciencia 🙏')
+    await sendMessage(jid, '✅ Listo. Un asesor de BlockBag te contactará pronto al número ' + numeroCliente + '.\n\nGracias por tu paciencia 🙏')
     await notificarAsesor(numeroCliente)
     return
   }
 
+  // ESPERANDO MEDIDAS
   if (session.state === STATES.ESPERANDO_MEDIDAS) {
     const nums = texto.match(/\d+/g)
     const esTalla = /^(xs|s|m|l|xl|talla)$/i.test(texto.trim())
@@ -119,26 +188,42 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // ESPERANDO DISENO
   if (session.state === STATES.ESPERANDO_DISENO) {
     if (!hasMedia && (!texto || texto.trim().length < 2)) {
       await sendMessage(jid, 'Por favor escríbenos el nombre o referencia del diseno que elegiste del catalogo, o envianos la foto del producto.' + NAV)
       return
     }
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
-    const precioForro = calcularPrecioDiseno(diseno)
-    const totalSinCandado = precioForro + 15000
-    const totalConCandado = precioForro + 15000 + 22000
-    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, diseno, precioForro } })
-    await sendMessage(jid, 'Diseno registrado 👍\n\n💰 *Resumen de tu pedido:*\n\nForro: $' + precioForro.toLocaleString('es-CO') + '\nEnvio: $15.000\nCandado (opcional): $22.000\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
+    await sendMessage(jid, '🔍 Buscando tu producto en el catalogo...')
+    
+    // Buscar producto en Shopify
+    const producto = await buscarProducto(diseno)
+    
+    if (producto.found) {
+      const precioForro = parseFloat(producto.price)
+      const totalSinCandado = precioForro + 15000
+      const totalConCandado = precioForro + 15000 + 22000
+      setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, diseno: producto.title, precioForro, variantId: producto.variantId } })
+      await sendMessage(jid, '✅ *Producto encontrado:* ' + producto.title + '\n\n💰 *Resumen:*\nForro: $' + precioForro.toLocaleString('es-CO') + '\nEnvio: $15.000\nCandado (opcional): $22.000\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n¿Deseas incluir el candado de seguridad?' + NAV)
+    } else {
+      const precioForro = calcularPrecioDiseno(diseno)
+      const totalSinCandado = precioForro + 15000
+      const totalConCandado = precioForro + 15000 + 22000
+      setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, diseno, precioForro } })
+      await sendMessage(jid, 'Diseno registrado 👍\n\n💰 *Resumen de tu pedido:*\n\nForro: $' + precioForro.toLocaleString('es-CO') + '\nEnvio: $15.000\nCandado (opcional): $22.000\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n¿Deseas incluir el candado de seguridad?' + NAV)
+    }
     return
   }
 
+  // ESPERANDO PERSONALIZACION
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
     setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
     await sendMessage(jid, 'Personalizacion registrada 👍\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto\n\nTodo en un solo mensaje 👇' + NAV)
     return
   }
 
+  // ESPERANDO DATOS PEDIDO
   if (session.state === STATES.ESPERANDO_DATOS_PEDIDO) {
     if (!texto || texto.trim().length < 5) {
       await sendMessage(jid, 'Por favor envianos tus datos completos en un solo mensaje:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto' + NAV)
@@ -149,12 +234,24 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // OFERTA CANDADO
   if (session.state === STATES.OFERTA_CANDADO) {
     const quiere = ['si', 'si quiero', 'claro', 'dale', 'yes', 'sí'].some(r => t === r || t.startsWith(r))
     const noQuiere = t === 'no' || t === 'no gracias'
     if (quiere || noQuiere) {
       setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, candado: quiere } })
       const msg = quiere ? 'Candado agregado 🔒 +$22.000\n\n' : 'De acuerdo, sin candado.\n\n'
+      
+      // Crear link de pago en Shopify si tenemos el variantId
+      if (session.pedido.variantId) {
+        await sendMessage(jid, '⏳ Generando tu link de pago...')
+        const checkoutUrl = await crearCheckout(session.pedido.variantId, 1, quiere)
+        if (checkoutUrl) {
+          await sendMessage(jid, msg + '🛒 *Tu link de pago esta listo:*\n\n' + checkoutUrl + '\n\nHaz clic en el link, completa tus datos y paga. ¡Es rapido y seguro! 🔒' + NAV)
+          return
+        }
+      }
+      
       await sendMessage(jid, msg + 'Como deseas pagar?\n\n1 Transferencia (Llave / Nequi)\n2 Pago contra entrega' + NAV)
       return
     }
@@ -162,6 +259,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // SELECCION PAGO
   if (session.state === STATES.SELECCION_PAGO) {
     if (t === '1' || t.includes('transfer') || t.includes('llave') || t.includes('nequi')) {
       setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE })
@@ -179,6 +277,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // CONFIRMACION COD
   if (session.state === STATES.CONFIRMACION_COD) {
     if (['si', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
       setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
@@ -190,6 +289,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // ESPERANDO COMPROBANTE
   if (session.state === STATES.ESPERANDO_COMPROBANTE) {
     if (hasMedia) {
       setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -205,6 +305,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // ESPERANDO DATOS ENVIO
   if (session.state === STATES.ESPERANDO_DATOS_ENVIO) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
     await sendMessage(jid, msgPedidoCompleto())
@@ -216,6 +317,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
 
+  // OPCIONES DEL MENU
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
     setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
