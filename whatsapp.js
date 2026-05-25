@@ -3,16 +3,13 @@ const pino = require('pino')
 const path = require('path')
 const https = require('https')
 const http = require('http')
-
 let sock = null
 let qrCode = null
 let connectionStatus = 'disconnected'
 let messageHandler = null
 let procesando = new Set()
 const logger = pino({ level: 'silent' })
-
 function setMessageHandler(fn) { messageHandler = fn }
-
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState(process.env.SESSION_PATH || path.join(__dirname, 'sessions'))
   const { version } = await fetchLatestBaileysVersion()
@@ -42,6 +39,16 @@ async function connectToWhatsApp() {
       procesando.add(msgId)
       setTimeout(() => procesando.delete(msgId), 30000)
       const jid = msg.key.remoteJid
+
+      // Detectar mensaje de carrito de WhatsApp
+      const ordenMsg = msg.message?.orderMessage
+      if (ordenMsg) {
+        try {
+          if (messageHandler) await messageHandler(jid, '__CARRITO__', false, ordenMsg)
+        } catch (e) { console.error('Error carrito:', e.message) }
+        continue
+      }
+
       const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.documentMessage || msg.message?.videoMessage)
       try { if (messageHandler) await messageHandler(jid, texto, hasMedia) }
@@ -50,18 +57,14 @@ async function connectToWhatsApp() {
   })
   return sock
 }
-
 async function sendMessage(jid, text) {
   if (!sock || connectionStatus !== 'connected') return
   await sock.sendMessage(jid, { text })
 }
-
 async function sendMenu(jid) {
   await sendMessage(jid,
 `🧳 *BlockBag — Protectores para maletas*
-
 ¿En qué te puedo ayudar hoy?
-
 1️⃣ Tallas y medidas
 2️⃣ Materiales
 3️⃣ Precios
@@ -69,10 +72,8 @@ async function sendMenu(jid) {
 5️⃣ Formas de pago
 6️⃣ Personalización _(8-10 días hábiles)_
 7️⃣ Hablar con asesor
-
 _Responde con el número_ 👇`)
 }
-
 function downloadImage(url) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http
@@ -84,7 +85,6 @@ function downloadImage(url) {
     }).on('error', reject)
   })
 }
-
 async function sendImage(jid, imageUrl, caption) {
   if (!sock || connectionStatus !== 'connected') return
   try {
@@ -96,6 +96,5 @@ async function sendImage(jid, imageUrl, caption) {
     await sock.sendMessage(jid, { text: (caption || '') + '\n\n' + imageUrl })
   }
 }
-
 function getStatus() { return { status: connectionStatus, qr: qrCode } }
 module.exports = { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessageHandler }
