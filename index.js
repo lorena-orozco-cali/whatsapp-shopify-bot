@@ -101,19 +101,13 @@ function setSession(jid, data) { sessions.set(jid, { ...getSession(jid), ...data
 function calcularTalla(texto) {
   const t = texto.toLowerCase()
   let alto = null
-
   const altoMatch = t.match(/alto[\s:]*(\d+)/) || t.match(/(\d+)\s*cm.*alto/) || t.match(/(\d+)\s*x\s*\d+/)
-  const anchoMatch = t.match(/ancho[\s:]*(\d+)/)
-
   if (altoMatch) alto = parseInt(altoMatch[1])
-
   if (!alto) {
     const nums = texto.match(/\d+/g)
     if (nums && nums.length >= 1) alto = parseInt(nums[0])
   }
-
   if (!alto) return null
-
   if (alto >= 45 && alto <= 57) return 'S'
   if (alto >= 58 && alto <= 66) return 'M'
   if (alto >= 67 && alto <= 70) return 'L'
@@ -135,9 +129,40 @@ async function notificarAsesor(numeroCliente) {
   }
 }
 
-async function handleMessage(jid, texto, hasMedia) {
+async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
+
+  // ── CARRITO DE WHATSAPP ──────────────────────────────────────
+  if (texto === '__CARRITO__' && ordenMsg) {
+    const items = ordenMsg.products || []
+    const primerProducto = items[0]
+    const nombreProducto = primerProducto?.name || 'Producto seleccionado'
+    const precioProducto = primerProducto?.price ? parseFloat(primerProducto.price) : null
+    const cantidadItems = ordenMsg.itemCount || items.length || 1
+
+    let precioForro = precioProducto || calcularPrecioDiseno(nombreProducto)
+    const totalSinCandado = precioForro + 15000
+    const totalConCandado = precioForro + 15000 + 22000
+
+    setSession(jid, {
+      state: STATES.OFERTA_CANDADO,
+      pedido: { ...session.pedido, diseno: nombreProducto, precioForro, variantId: primerProducto?.productId || null }
+    })
+
+    await sendMessage(jid,
+      '🛒 *¡Recibimos tu pedido del catálogo!*\n\n' +
+      '📦 Producto: *' + nombreProducto + '*\n' +
+      '🔢 Cantidad: ' + cantidadItems + '\n\n' +
+      '💰 *Resumen:*\n' +
+      'Forro: $' + precioForro.toLocaleString('es-CO') + '\n' +
+      'Envio: $15.000\n' +
+      'Candado (opcional): $22.000\n\n' +
+      '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
+      '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
+      '🔒 ¿Deseas incluir el candado de seguridad?\n\nResponde *si* o *no*' + NAV)
+    return
+  }
 
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
@@ -186,15 +211,15 @@ async function handleMessage(jid, texto, hasMedia) {
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
     await sendMessage(jid,
       msgTalla +
-      '🛍️ Ahora elige tu forro favorito desde nuestro catalogo de WhatsApp:\n\n' +
+      '🛍️ Elige tu forro favorito desde nuestro catalogo:\n\n' +
       CATALOGO_WA + '\n\n' +
-      'Una vez lo veas, escríbenos el nombre del producto que deseas y lo procesamos 👇' + NAV)
+      'Agrega el producto al carrito y envianoslo directamente desde el catalogo 👇' + NAV)
     return
   }
 
   if (session.state === STATES.ESPERANDO_DISENO) {
     if (!hasMedia && (!texto || texto.trim().length < 2)) {
-      await sendMessage(jid, 'Por favor escríbenos el nombre del producto que elegiste del catálogo.' + NAV)
+      await sendMessage(jid, 'Por favor elige un producto del catalogo y envialo:\n\n' + CATALOGO_WA + NAV)
       return
     }
     const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
@@ -207,13 +232,13 @@ async function handleMessage(jid, texto, hasMedia) {
       setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, diseno: producto.title, precioForro, variantId: producto.variantId } })
       await sendMessage(jid,
         '✅ *' + producto.title + '*\n\n' +
-        '💰 *Resumen de tu pedido:*\n' +
+        '💰 *Resumen:*\n' +
         'Forro: $' + precioForro.toLocaleString('es-CO') + '\n' +
         'Envio: $15.000\n' +
         'Candado (opcional): $22.000\n\n' +
         '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
         '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
-        '🔒 ¿Deseas incluir el candado de seguridad?\n\nResponde *si* o *no*' + NAV)
+        '🔒 ¿Deseas incluir el candado?\n\nResponde *si* o *no*' + NAV)
     } else {
       const precioForro = calcularPrecioDiseno(diseno)
       const totalSinCandado = precioForro + 15000
@@ -221,13 +246,13 @@ async function handleMessage(jid, texto, hasMedia) {
       setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, diseno, precioForro } })
       await sendMessage(jid,
         'Diseno registrado ✅\n\n' +
-        '💰 *Resumen de tu pedido:*\n' +
+        '💰 *Resumen:*\n' +
         'Forro: $' + precioForro.toLocaleString('es-CO') + '\n' +
         'Envio: $15.000\n' +
         'Candado (opcional): $22.000\n\n' +
         '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
         '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
-        '🔒 ¿Deseas incluir el candado de seguridad?\n\nResponde *si* o *no*' + NAV)
+        '🔒 ¿Deseas incluir el candado?\n\nResponde *si* o *no*' + NAV)
     }
     return
   }
@@ -356,7 +381,7 @@ async function handleMessage(jid, texto, hasMedia) {
     return
   }
   if (t === '6' || t.includes('catalogo') || t.includes('catálogo')) {
-    await sendMessage(jid, '🛍️ *Catalogo BlockBag*\n\nVe todos nuestros productos con fotos y precios directamente aqui:\n\n' + CATALOGO_WA + '\n\nAgrega lo que quieras al carrito y cuéntanos qué elegiste 👇' + NAV)
+    await sendMessage(jid, '🛍️ *Catalogo BlockBag*\n\nVe todos nuestros productos con fotos y precios:\n\n' + CATALOGO_WA + '\n\nAgrega lo que quieras al carrito y envialo directamente desde el catalogo 👇' + NAV)
     return
   }
 
