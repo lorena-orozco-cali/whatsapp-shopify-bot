@@ -136,26 +136,40 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   // ── CARRITO DE WHATSAPP ──────────────────────────────────────
   if (texto === '__CARRITO__' && ordenMsg) {
     const items = ordenMsg.products || []
-    const primerProducto = items[0]
-    const nombreProducto = primerProducto?.name || 'Producto seleccionado'
-    const precioProducto = primerProducto?.price ? parseFloat(primerProducto.price) : null
     const cantidadItems = ordenMsg.itemCount || items.length || 1
 
-    let precioForro = precioProducto || calcularPrecioDiseno(nombreProducto)
+    // totalAmount1000 viene en milésimas — dividir entre 1000 para obtener COP real
+    let precioForro = 0
+    if (ordenMsg.totalAmount1000) {
+      precioForro = Math.round(parseInt(ordenMsg.totalAmount1000) / 1000)
+    } else {
+      // fallback: sumar precios individuales
+      precioForro = items.reduce((acc, item) => {
+        const p = item.price ? parseFloat(item.price) : 0
+        return acc + p
+      }, 0)
+      if (precioForro === 0) precioForro = 80000
+    }
+
+    // Nombres de productos
+    const nombresProductos = items.length > 0
+      ? items.map(i => i.name || 'Producto').join(', ')
+      : 'Productos seleccionados'
+
     const totalSinCandado = precioForro + 15000
     const totalConCandado = precioForro + 15000 + 22000
 
     setSession(jid, {
       state: STATES.OFERTA_CANDADO,
-      pedido: { ...session.pedido, diseno: nombreProducto, precioForro, variantId: primerProducto?.productId || null }
+      pedido: { ...session.pedido, diseno: nombresProductos, precioForro, variantId: items[0]?.productId || null }
     })
 
     await sendMessage(jid,
       '🛒 *¡Recibimos tu pedido del catálogo!*\n\n' +
-      '📦 Producto: *' + nombreProducto + '*\n' +
+      '📦 Productos: *' + nombresProductos + '*\n' +
       '🔢 Cantidad: ' + cantidadItems + '\n\n' +
       '💰 *Resumen:*\n' +
-      'Forro: $' + precioForro.toLocaleString('es-CO') + '\n' +
+      'Productos: $' + precioForro.toLocaleString('es-CO') + '\n' +
       'Envio: $15.000\n' +
       'Candado (opcional): $22.000\n\n' +
       '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
