@@ -43,6 +43,7 @@ async function connectToWhatsApp() {
       // Detectar mensaje de carrito de WhatsApp
       const ordenMsg = msg.message?.orderMessage
       if (ordenMsg) {
+        console.log('CARRITO RECIBIDO:', JSON.stringify(ordenMsg, null, 2))
         try {
           if (messageHandler) await messageHandler(jid, '__CARRITO__', false, ordenMsg)
         } catch (e) { console.error('Error carrito:', e.message) }
