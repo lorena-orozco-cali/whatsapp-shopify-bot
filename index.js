@@ -138,12 +138,10 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     const items = ordenMsg.products || []
     const cantidadItems = ordenMsg.itemCount || items.length || 1
 
-    // totalAmount1000 viene en milésimas — dividir entre 1000 para obtener COP real
     let precioForro = 0
     if (ordenMsg.totalAmount1000) {
       precioForro = Math.round(parseInt(ordenMsg.totalAmount1000) / 1000)
     } else {
-      // fallback: sumar precios individuales
       precioForro = items.reduce((acc, item) => {
         const p = item.price ? parseFloat(item.price) : 0
         return acc + p
@@ -151,18 +149,22 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
       if (precioForro === 0) precioForro = 80000
     }
 
-    // Nombres de productos
     const nombresProductos = items.length > 0
       ? items.map(i => i.name || 'Producto').join(', ')
       : 'Productos seleccionados'
 
+    const precioCandados = 22000 * cantidadItems
     const totalSinCandado = precioForro + 15000
-    const totalConCandado = precioForro + 15000 + 22000
+    const totalConCandado = precioForro + 15000 + precioCandados
 
     setSession(jid, {
       state: STATES.OFERTA_CANDADO,
-      pedido: { ...session.pedido, diseno: nombresProductos, precioForro, variantId: items[0]?.productId || null }
+      pedido: { ...session.pedido, diseno: nombresProductos, precioForro, cantidadItems, variantId: items[0]?.productId || null }
     })
+
+    const msgCandado = cantidadItems > 1
+      ? '🔒 ¿Deseas incluir *' + cantidadItems + ' candados* de seguridad ($22.000 c/u = $' + precioCandados.toLocaleString('es-CO') + ')?\n\nResponde *si* o *no*'
+      : '🔒 ¿Deseas incluir el candado de seguridad ($22.000)?\n\nResponde *si* o *no*'
 
     await sendMessage(jid,
       '🛒 *¡Recibimos tu pedido del catálogo!*\n\n' +
@@ -171,10 +173,10 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
       '💰 *Resumen:*\n' +
       'Productos: $' + precioForro.toLocaleString('es-CO') + '\n' +
       'Envio: $15.000\n' +
-      'Candado (opcional): $22.000\n\n' +
+      'Candado' + (cantidadItems > 1 ? 's' : '') + ' (opcional): $' + precioCandados.toLocaleString('es-CO') + '\n\n' +
       '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
       '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
-      '🔒 ¿Deseas incluir el candado de seguridad?\n\nResponde *si* o *no*' + NAV)
+      msgCandado + NAV)
     return
   }
 
@@ -221,7 +223,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     const msgTalla = talla
       ? '✅ Medidas registradas.\n\nSegun tus medidas, *tu talla es ' + talla + '*.\n\n'
       : '✅ Medidas registradas.\n\n'
-
     setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
     await sendMessage(jid,
       msgTalla +
@@ -371,9 +372,9 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   }
 
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
-    setSession(jid, { state: STATES.ESPERANDO_MEDIDAS })
+    setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
     await sendImage(jid, process.env.IMG_MEDIDAS_URL,
-      'Guia de medidas BlockBag\n\nMide tu maleta sin contar las ruedas:\n\nAlto en cm\nAncho en cm\n\nEjemplo: *alto 65 ancho 45*\n\n_Si tienes dudas escribe *asesor*_' + NAV)
+      '🧳 *Guia de tallas BlockBag*\n\nSi tienes dudas te derivamos con un asesor.\n\n_Escribe *asesor* para hablar con nosotros_')
     return
   }
   if (t === '2' || t.includes('material')) {
@@ -399,7 +400,9 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  await sendMenu(jid)
+  // Mensaje fuera de contexto — derivar a asesor
+  await sendMessage(jid, '👤 Enseguida te derivamos con un asesor que te ayudará.\n\n_Escribe *opciones* si deseas ver el menú_')
+  await notificarAsesor(jid.replace('@s.whatsapp.net', ''))
 }
 
 function verificarShopify(req, res, next) {
