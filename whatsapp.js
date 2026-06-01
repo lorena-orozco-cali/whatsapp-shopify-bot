@@ -39,8 +39,6 @@ async function connectToWhatsApp() {
       procesando.add(msgId)
       setTimeout(() => procesando.delete(msgId), 30000)
       const jid = msg.key.remoteJid
-
-      // Detectar mensaje de carrito de WhatsApp
       const ordenMsg = msg.message?.orderMessage
       if (ordenMsg) {
         console.log('CARRITO RECIBIDO:', JSON.stringify(ordenMsg, null, 2))
@@ -49,7 +47,6 @@ async function connectToWhatsApp() {
         } catch (e) { console.error('Error carrito:', e.message) }
         continue
       }
-
       const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
       const hasMedia = !!(msg.message?.imageMessage || msg.message?.documentMessage || msg.message?.videoMessage)
       try { if (messageHandler) await messageHandler(jid, texto, hasMedia) }
@@ -71,11 +68,11 @@ async function sendMenu(jid) {
 3️⃣ Precios
 4️⃣ Envíos
 5️⃣ Formas de pago
-6️⃣ Personalización _(8-10 días hábiles)_
+6️⃣ Catálogo
 7️⃣ Hablar con asesor
 _Responde con el número_ 👇`)
 }
-function downloadImage(url) {
+function downloadFile(url) {
   return new Promise((resolve, reject) => {
     const client = url.startsWith('https') ? https : http
     client.get(url, (res) => {
@@ -89,7 +86,7 @@ function downloadImage(url) {
 async function sendImage(jid, imageUrl, caption) {
   if (!sock || connectionStatus !== 'connected') return
   try {
-    const buffer = await downloadImage(imageUrl)
+    const buffer = await downloadFile(imageUrl)
     await sock.sendMessage(jid, { image: buffer, mimetype: 'image/jpeg', caption: caption || '' })
     console.log('Imagen enviada a ' + jid)
   } catch (err) {
@@ -97,5 +94,16 @@ async function sendImage(jid, imageUrl, caption) {
     await sock.sendMessage(jid, { text: (caption || '') + '\n\n' + imageUrl })
   }
 }
+async function sendVideo(jid, videoUrl, caption) {
+  if (!sock || connectionStatus !== 'connected') return
+  try {
+    const buffer = await downloadFile(videoUrl)
+    await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption: caption || '' })
+    console.log('Video enviado a ' + jid)
+  } catch (err) {
+    console.error('Error video:', err.message)
+    if (caption) await sock.sendMessage(jid, { text: caption })
+  }
+}
 function getStatus() { return { status: connectionStatus, qr: qrCode } }
-module.exports = { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessageHandler }
+module.exports = { connectToWhatsApp, sendMessage, sendMenu, sendImage, sendVideo, getStatus, setMessageHandler }
