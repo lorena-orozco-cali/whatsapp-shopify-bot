@@ -15,13 +15,13 @@ async function crearPedidoShopify(session, datosEnvio) {
     if (session.pedido.variantId) {
       lineItems.push({ variant_id: session.pedido.variantId, quantity: 1 })
     }
-    if (session.pedido.candado) {
+    if (session.pedido.candado && session.pedido.numeroCandados) {
       const candadoRes = await axios.get(
         'https://' + SHOPIFY_STORE + '.myshopify.com/admin/api/2024-01/products.json',
         { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }, params: { title: 'candado', limit: 1 } }
       )
       if (candadoRes.data.products?.length > 0) {
-        lineItems.push({ variant_id: candadoRes.data.products[0].variants[0].id, quantity: 1 })
+        lineItems.push({ variant_id: candadoRes.data.products[0].variants[0].id, quantity: session.pedido.numeroCandados || 1 })
       }
     }
     if (lineItems.length === 0) return null
@@ -46,30 +46,11 @@ async function crearPedidoShopify(session, datosEnvio) {
   }
 }
 
-async function buscarProducto(nombre) {
-  try {
-    const res = await axios.get(
-      'https://' + SHOPIFY_STORE + '.myshopify.com/admin/api/2024-01/products.json',
-      { headers: { 'X-Shopify-Access-Token': SHOPIFY_TOKEN }, params: { title: nombre, limit: 5 } }
-    )
-    const products = res.data.products
-    if (products?.length > 0) {
-      const product = products[0]
-      const variant = product.variants[0]
-      return { variantId: variant.id, title: product.title, price: variant.price, found: true }
-    }
-    return { found: false }
-  } catch (err) {
-    console.error('Error buscando producto:', err.message)
-    return { found: false }
-  }
-}
-
-const { connectToWhatsApp, sendMessage, sendMenu, sendImage, getStatus, setMessageHandler } = require('./whatsapp')
+const { connectToWhatsApp, sendMessage, sendMenu, sendImage, sendVideo, getStatus, setMessageHandler } = require('./whatsapp')
 const { msgPedidoNuevo, msgPagoConfirmado, msgEnvioDespachado,
-        msgCarritoAbandonado, msgPostventa, msgReporteDiario,
-        msgMateriales, msgEnvios, msgOfertaCandado, msgPagosDinamicos,
-        msgContraEntrega, msgPedirDatosEnvio, msgPedidoCompleto } = require('./messages')
+        msgCarritoAbandonado, msgReporteDiario,
+        msgMateriales, msgEnvios, msgPagosDinamicos,
+        msgPedidoCompleto } = require('./messages')
 const { limpiarTelefono, getStatsHoy } = require('./shopify')
 
 const app = express()
@@ -78,13 +59,10 @@ app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }))
 const sessions = new Map()
 const STATES = {
   MENU: 'MENU',
-  ESPERANDO_MEDIDAS: 'ESPERANDO_MEDIDAS',
   ESPERANDO_DISENO: 'ESPERANDO_DISENO',
   ESPERANDO_PERSONALIZACION: 'ESPERANDO_PERSONALIZACION',
-  ESPERANDO_DATOS_PEDIDO: 'ESPERANDO_DATOS_PEDIDO',
   OFERTA_CANDADO: 'OFERTA_CANDADO',
-  SELECCION_PAGO: 'SELECCION_PAGO',
-  CONFIRMACION_COD: 'CONFIRMACION_COD',
+  ESPERANDO_CANTIDAD_CANDADOS: 'ESPERANDO_CANTIDAD_CANDADOS',
   ESPERANDO_COMPROBANTE: 'ESPERANDO_COMPROBANTE',
   ESPERANDO_DATOS_ENVIO: 'ESPERANDO_DATOS_ENVIO',
   ESPERANDO_NUMERO_ASESOR: 'ESPERANDO_NUMERO_ASESOR',
@@ -98,34 +76,25 @@ function getSession(jid) {
 }
 function setSession(jid, data) { sessions.set(jid, { ...getSession(jid), ...data }) }
 
-function calcularTalla(texto) {
-  const t = texto.toLowerCase()
-  let alto = null
-  const altoMatch = t.match(/alto[\s:]*(\d+)/) || t.match(/(\d+)\s*cm.*alto/) || t.match(/(\d+)\s*x\s*\d+/)
-  if (altoMatch) alto = parseInt(altoMatch[1])
-  if (!alto) {
-    const nums = texto.match(/\d+/g)
-    if (nums && nums.length >= 1) alto = parseInt(nums[0])
+function msgPagosDinamicosLocal() {
+  const day = new Date().getDate()
+  if (day <= 15) {
+    return '💳 *Medios de Pago BlockBag*\n\n🔑 *Llave:* ' + (process.env.PAGO_Q1_NUMERO_1 || '66986350') + '\n📱 *Nequi:* ' + (process.env.PAGO_Q1_NUMERO_2 || '3174232091') + '\n\n📸 Envíanos el pantallazo del comprobante para proceder.\n\n✅ Paga fácil | ⚡ Rápido | 🔒 Seguro'
+  } else {
+    return '💳 *Medios de Pago BlockBag*\n\n🔑 *Llave:* ' + (process.env.PAGO_Q2_ALIAS_1 || '@VCE626') + '\n👤 *Titular:* ' + (process.env.PAGO_Q2_TITULAR_1 || 'Valentina Cervino') + '\n\n📲 Desde la app de tu banco, sin costo y de forma inmediata.\n\n📸 Envíanos el pantallazo del comprobante para proceder.'
   }
-  if (!alto) return null
-  if (alto >= 45 && alto <= 57) return 'S'
-  if (alto >= 58 && alto <= 66) return 'M'
-  if (alto >= 67 && alto <= 70) return 'L'
-  if (alto >= 71) return 'XL'
-  return null
 }
 
-function calcularPrecioDiseno(diseno) {
-  const d = diseno.toLowerCase()
-  if (d.includes('basico') || d.includes('básico')) return 60000
-  return 80000
+async function enviarGuiaMedidas(jid) {
+  await sendVideo(jid, process.env.VIDEO_MEDIDAS_URL, '')
+  await sendImage(jid, process.env.IMG_MEDIDAS_URL,
+    '📏 *Guía de tallas BlockBag*\n\nMide tu maleta *sin contar las ruedas*.\n\nTeniendo en cuenta la información anterior, elige tu producto en nuestro catálogo:\n\n' + CATALOGO_WA + NAV)
 }
 
-async function notificarAsesor(numeroCliente) {
+async function notificarSandra(msg) {
   const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
   for (const num of owners) {
-    await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
-      '🔔 *ALERTA: Cliente solicita asesor*\n\nNumero: ' + numeroCliente + '\n\nBusca este contacto en el chat de BlockBag.')
+    await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net', msg)
   }
 }
 
@@ -137,49 +106,33 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   if (texto === '__CARRITO__' && ordenMsg) {
     const items = ordenMsg.products || []
     const cantidadItems = ordenMsg.itemCount || items.length || 1
-
-    let precioForro = 0
+    let precioTotal = 0
     if (ordenMsg.totalAmount1000) {
-      precioForro = Math.round(parseInt(ordenMsg.totalAmount1000) / 1000)
+      precioTotal = Math.round(parseInt(ordenMsg.totalAmount1000) / 1000)
     } else {
-      precioForro = items.reduce((acc, item) => {
-        const p = item.price ? parseFloat(item.price) : 0
-        return acc + p
-      }, 0)
-      if (precioForro === 0) precioForro = 80000
+      precioTotal = items.reduce((acc, item) => acc + (item.price ? parseFloat(item.price) : 0), 0)
+      if (precioTotal === 0) precioTotal = 80000
     }
-
-    const nombresProductos = items.length > 0
-      ? items.map(i => i.name || 'Producto').join(', ')
-      : 'Productos seleccionados'
-
+    const nombresProductos = items.length > 0 ? items.map(i => i.name || 'Producto').join(', ') : 'Productos seleccionados'
     const precioCandados = 22000 * cantidadItems
-    const totalSinCandado = precioForro + 15000
-    const totalConCandado = precioForro + 15000 + precioCandados
+    const totalSinCandado = precioTotal + 15000
+    const totalConCandado = precioTotal + 15000 + precioCandados
 
     setSession(jid, {
       state: STATES.OFERTA_CANDADO,
-      pedido: { ...session.pedido, diseno: nombresProductos, precioForro, cantidadItems, variantId: items[0]?.productId || null }
+      pedido: { ...session.pedido, diseno: nombresProductos, precioTotal, cantidadItems, variantId: items[0]?.productId || null }
     })
 
     const msgCandado = cantidadItems > 1
-      ? '🔒 ¿Deseas incluir *' + cantidadItems + ' candados* de seguridad ($22.000 c/u = $' + precioCandados.toLocaleString('es-CO') + ')?\n\nResponde *si* o *no*'
+      ? '🔒 ¿Deseas incluir *' + cantidadItems + ' candados* de seguridad ($22.000 c/u = $' + precioCandados.toLocaleString('es-CO') + ')?\n\nResponde *si*, *no*, o el número que deseas (ej: *2*)'
       : '🔒 ¿Deseas incluir el candado de seguridad ($22.000)?\n\nResponde *si* o *no*'
 
     await sendMessage(jid,
-      '🛒 *¡Recibimos tu pedido del catálogo!*\n\n' +
-      '📦 Productos: *' + nombresProductos + '*\n' +
-      '🔢 Cantidad: ' + cantidadItems + '\n\n' +
-      '💰 *Resumen:*\n' +
-      'Productos: $' + precioForro.toLocaleString('es-CO') + '\n' +
-      'Envio: $15.000\n' +
-      'Candado' + (cantidadItems > 1 ? 's' : '') + ' (opcional): $' + precioCandados.toLocaleString('es-CO') + '\n\n' +
-      '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
-      '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
-      msgCandado + NAV)
+      '🛒 *¡Recibimos tu pedido!*\n\n📦 *' + nombresProductos + '*\n🔢 Cantidad: ' + cantidadItems + '\n\n💰 *Resumen:*\nProductos: $' + precioTotal.toLocaleString('es-CO') + '\nEnvío: $15.000\nCandado' + (cantidadItems > 1 ? 's' : '') + ' (opcional): $' + precioCandados.toLocaleString('es-CO') + '\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' + msgCandado + NAV)
     return
   }
 
+  // ── MENU Y SALUDO ─────────────────────────────────────────────
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -187,16 +140,10 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
+  // ── ASESOR ────────────────────────────────────────────────────
   if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('hablar con')) {
     setSession(jid, { state: STATES.ESPERANDO_NUMERO_ASESOR })
     await sendMessage(jid, '👤 *Hablar con un asesor*\n\nPor favor escríbenos tu número de celular.\n\nEjemplo: *3001234567*')
-    return
-  }
-
-  if (t.includes('personaliz')) {
-    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
-    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
-      '🎨 *Personalizacion BlockBag*\n\nTiempo de entrega: *8 a 10 dias habiles*.\n\nIndicanos que diseno quieres y en que parte de la maleta.\n\nEscribenos todos los detalles 👇' + NAV)
     return
   }
 
@@ -208,173 +155,133 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     }
     setSession(jid, { state: STATES.MENU })
     await sendMessage(jid, '✅ Un asesor te contactará pronto. Gracias 🙏')
-    await notificarAsesor(nums.join(''))
+    await notificarSandra('🔔 *ALERTA: Cliente solicita asesor*\n\nNumero: ' + nums.join('') + '\n\nBusca este contacto en el chat de BlockBag.')
     return
   }
 
-  if (session.state === STATES.ESPERANDO_MEDIDAS) {
-    const nums = texto.match(/\d+/g)
-    const esTalla = /^(xs|s|m|l|xl|talla)$/i.test(texto.trim())
-    if (!texto || texto.trim().length < 2 || !nums || esTalla) {
-      await sendMessage(jid, 'Necesito las medidas en centimetros.\n\nEjemplo: *alto 65 ancho 45*\n\n(sin contar las ruedas)\n\n_Si tienes dudas escribe *asesor*_' + NAV)
-      return
-    }
-    const talla = calcularTalla(texto)
-    const msgTalla = talla
-      ? '✅ Medidas registradas.\n\nSegun tus medidas, *tu talla es ' + talla + '*.\n\n'
-      : '✅ Medidas registradas.\n\n'
-    setSession(jid, { state: STATES.ESPERANDO_DISENO, pedido: { ...session.pedido, medidas: texto, talla } })
-    await sendMessage(jid,
-      msgTalla +
-      '🛍️ Elige tu forro favorito desde nuestro catalogo:\n\n' +
-      CATALOGO_WA + '\n\n' +
-      'Agrega el producto al carrito y envianoslo directamente desde el catalogo 👇' + NAV)
-    return
-  }
+  // ── PREGUNTAS SOBRE DIMENSIONES ───────────────────────────────
+  const esDimension = t.includes('kilo') || t.includes('peso') || t.includes('pesa') ||
+    t.includes('maleta grande') || t.includes('maleta pequeña') || t.includes('maleta peque') ||
+    t.includes('qué talla') || t.includes('que talla') || t.includes('tamaño') ||
+    t.includes('dimensi') || (t.includes('medida') && !session.state.includes('ESPERANDO'))
 
-  if (session.state === STATES.ESPERANDO_DISENO) {
-    if (!hasMedia && (!texto || texto.trim().length < 2)) {
-      await sendMessage(jid, 'Por favor elige un producto del catalogo y envialo:\n\n' + CATALOGO_WA + NAV)
-      return
-    }
-    const diseno = hasMedia ? 'Foto enviada por el cliente' : texto
-    await sendMessage(jid, '🔍 Buscando tu producto...')
-    const producto = await buscarProducto(diseno)
-    if (producto.found) {
-      const precioForro = parseFloat(producto.price)
-      const totalSinCandado = precioForro + 15000
-      const totalConCandado = precioForro + 15000 + 22000
-      setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, diseno: producto.title, precioForro, variantId: producto.variantId } })
-      await sendMessage(jid,
-        '✅ *' + producto.title + '*\n\n' +
-        '💰 *Resumen:*\n' +
-        'Forro: $' + precioForro.toLocaleString('es-CO') + '\n' +
-        'Envio: $15.000\n' +
-        'Candado (opcional): $22.000\n\n' +
-        '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
-        '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
-        '🔒 ¿Deseas incluir el candado?\n\nResponde *si* o *no*' + NAV)
+  if (esDimension) {
+    if (t.includes('cabina') || t.includes('carry')) {
+      await sendImage(jid, process.env.IMG_MEDIDAS_URL,
+        '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
     } else {
-      const precioForro = calcularPrecioDiseno(diseno)
-      const totalSinCandado = precioForro + 15000
-      const totalConCandado = precioForro + 15000 + 22000
-      setSession(jid, { state: STATES.OFERTA_CANDADO, pedido: { ...session.pedido, diseno, precioForro } })
-      await sendMessage(jid,
-        'Diseno registrado ✅\n\n' +
-        '💰 *Resumen:*\n' +
-        'Forro: $' + precioForro.toLocaleString('es-CO') + '\n' +
-        'Envio: $15.000\n' +
-        'Candado (opcional): $22.000\n\n' +
-        '*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n' +
-        '*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' +
-        '🔒 ¿Deseas incluir el candado?\n\nResponde *si* o *no*' + NAV)
+      await enviarGuiaMedidas(jid)
     }
+    return
+  }
+
+  // ── PREGUNTA MALETA DE CABINA ─────────────────────────────────
+  if (t.includes('cabina') || t.includes('carry on') || t.includes('carry-on')) {
+    await sendImage(jid, process.env.IMG_MEDIDAS_URL,
+      '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
+    return
+  }
+
+  // ── UBICACIÓN ─────────────────────────────────────────────────
+  if (t.includes('ubicad') || t.includes('donde estan') || t.includes('dónde están') ||
+      t.includes('donde quedan') || t.includes('donde est') || t.includes('dónde est')) {
+    await sendMessage(jid, '📍 Despachamos desde *Cali, Colombia* a todo el país y al exterior.\n\nEl envío nacional tiene un costo de $15.000 🚚' + NAV)
+    return
+  }
+
+  // ── CONTRA ENTREGA ────────────────────────────────────────────
+  if (t.includes('contra entrega') || t.includes('contraentrega') || t.includes('contra-entrega') ||
+      (t.includes('contra') && t.includes('entrega')) || t.includes('efectivo')) {
+    await sendMessage(jid, '💳 Por el momento solo manejamos pago por *transferencia bancaria* (Llave / Nequi).\n\nCuando tengas tu pedido listo te enviamos los datos de pago.' + NAV)
+    return
+  }
+
+  // ── PERSONALIZACION ───────────────────────────────────────────
+  if (t.includes('personaliz')) {
+    setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
+    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
+      '🎨 *Personalización BlockBag*\n\nTiempo de entrega: *8 a 10 días hábiles*.\n\nIndícanos qué diseño quieres y en qué parte de la maleta.\n\nEscríbenos todos los detalles 👇' + NAV)
     return
   }
 
   if (session.state === STATES.ESPERANDO_PERSONALIZACION) {
-    setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, personalizacion: texto } })
-    await sendMessage(jid, 'Personalizacion registrada ✅\n\nPara finalizar envianos:\n\n👤 Nombre completo\n🏠 Direccion\n🏙️ Ciudad\n📱 Telefono\n\nTodo en un mensaje 👇' + NAV)
+    setSession(jid, { state: STATES.MENU })
+    await sendMessage(jid, 'Personalización registrada ✅\n\nUn asesor te contactará para coordinar los detalles.' + NAV)
+    await notificarSandra('🎨 *Solicitud de personalización*\nCliente: ' + jid.replace('@s.whatsapp.net', '') + '\nDetalle: ' + texto)
     return
   }
 
+  // ── OFERTA CANDADO ────────────────────────────────────────────
   if (session.state === STATES.OFERTA_CANDADO) {
-    const quiere = ['si', 'si quiero', 'claro', 'dale', 'yes', 'sí'].some(r => t === r || t.startsWith(r))
+    const numWords = {'uno':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,'seis':6,'siete':7,'ocho':8,'nueve':9,'diez':10}
+    let candadosN = null
+    const mNum = t.match(/\d+/)
+    if (mNum) candadosN = parseInt(mNum[0])
+    else { for (const [w, n] of Object.entries(numWords)) { if (t.includes(w)) { candadosN = n; break } } }
+
+    const quiere = ['si', 'sí', 'claro', 'dale', 'yes'].some(r => t === r || t.startsWith(r))
     const noQuiere = t === 'no' || t === 'no gracias'
-    if (quiere || noQuiere) {
-      setSession(jid, { state: STATES.ESPERANDO_DATOS_PEDIDO, pedido: { ...session.pedido, candado: quiere } })
-      const msg = quiere ? 'Candado agregado 🔒 +$22.000\n\n' : 'Sin candado.\n\n'
-      await sendMessage(jid, msg + 'Para finalizar envianos tus datos en un solo mensaje:\n\n👤 Nombre completo\n🏠 Direccion de entrega\n🏙️ Ciudad\n📱 Telefono de contacto' + NAV)
-      return
-    }
-    await sendMessage(jid, '¿Deseas incluir el candado de seguridad por $22.000?\n\nResponde *si* o *no*' + NAV)
-    return
-  }
 
-  if (session.state === STATES.ESPERANDO_DATOS_PEDIDO) {
-    if (!texto || texto.trim().length < 5) {
-      await sendMessage(jid, 'Por favor envianos tus datos completos:\n\n👤 Nombre completo\n🏠 Direccion\n🏙️ Ciudad\n📱 Telefono' + NAV)
-      return
-    }
-    setSession(jid, { state: STATES.SELECCION_PAGO, pedido: { ...session.pedido, datos: texto } })
-    await sendMessage(jid, '✅ Datos registrados.\n\n💳 ¿Como deseas pagar?\n\n1️⃣ Transferencia (Llave / Nequi)\n2️⃣ Pago contra entrega' + NAV)
-    return
-  }
-
-  if (session.state === STATES.SELECCION_PAGO) {
-    if (t === '1' || t.includes('transfer') || t.includes('llave') || t.includes('nequi')) {
-      setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE })
+    if (candadosN !== null && !quiere && !noQuiere) {
+      const pc = 22000 * candadosN
+      const tot = (session.pedido.precioTotal || 0) + 15000 + pc
+      setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE, pedido: { ...session.pedido, candado: true, numeroCandados: candadosN } })
       const day = new Date().getDate()
       const imgUrl = day <= 15 ? process.env.PAGO_Q1_IMAGEN_URL : process.env.PAGO_Q2_IMAGEN_URL
-      await sendImage(jid, imgUrl, msgPagosDinamicos() + NAV)
+      await sendMessage(jid, '🔒 *' + candadosN + ' candado' + (candadosN > 1 ? 's' : '') + ' agregado' + (candadosN > 1 ? 's' : '') + '* ($' + pc.toLocaleString('es-CO') + ')\n\n💰 *Total: $' + tot.toLocaleString('es-CO') + '*\n\n📸 Realiza tu pago y envíanos el comprobante:')
+      await sendImage(jid, imgUrl, msgPagosDinamicosLocal())
       return
     }
-    if (t === '2' || t.includes('contra') || t.includes('efectivo')) {
-      setSession(jid, { state: STATES.CONFIRMACION_COD })
-      await sendMessage(jid, msgContraEntrega() + NAV)
+
+    if (quiere || noQuiere) {
+      const numeroCandados = quiere ? (session.pedido.cantidadItems || 1) : 0
+      const pc = 22000 * numeroCandados
+      const tot = (session.pedido.precioTotal || 0) + 15000 + (quiere ? pc : 0)
+      setSession(jid, { state: STATES.ESPERANDO_COMPROBANTE, pedido: { ...session.pedido, candado: quiere, numeroCandados } })
+      const msg = quiere ? '🔒 Candado' + (numeroCandados > 1 ? 's' : '') + ' agregado' + (numeroCandados > 1 ? 's' : '') + ' ($' + pc.toLocaleString('es-CO') + ')\n\n' : 'Sin candado.\n\n'
+      const day = new Date().getDate()
+      const imgUrl = day <= 15 ? process.env.PAGO_Q1_IMAGEN_URL : process.env.PAGO_Q2_IMAGEN_URL
+      await sendMessage(jid, msg + '💰 *Total: $' + tot.toLocaleString('es-CO') + '*\n\n📸 Realiza tu pago y envíanos el comprobante:')
+      await sendImage(jid, imgUrl, msgPagosDinamicosLocal())
       return
     }
-    await sendMessage(jid, 'Responde *1* transferencia o *2* contra entrega.' + NAV)
+
+    await sendMessage(jid, '¿Deseas incluir el candado de seguridad?\n\nResponde *si*, *no*, o el número que deseas (ej: *2*)' + NAV)
     return
   }
 
-  if (session.state === STATES.CONFIRMACION_COD) {
-    if (['si', 'confirmo', 'acepto', 'ok', 'dale'].some(r => t.includes(r))) {
-      await sendMessage(jid, '⏳ Procesando tu pedido...')
-      const orden = await crearPedidoShopify(session, session.pedido.datos || '')
-      setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
-      if (orden) {
-        await sendMessage(jid, '✅ *¡Pedido creado!*\n\n📦 Orden #' + orden.order_number + '\n\nMuy pronto recibirás tu guia de despacho.\n\n¡Gracias por tu compra en BlockBag! 🧳❤️')
-        const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-        for (const num of owners) {
-          await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
-            '📦 *Nuevo pedido contra entrega*\nOrden #' + orden.order_number + '\nProducto: ' + session.pedido.diseno + '\nDatos: ' + session.pedido.datos)
-        }
-      } else {
-        await sendMessage(jid, msgPedidoCompleto())
-      }
-    } else {
-      setSession(jid, { state: STATES.SELECCION_PAGO })
-      await sendMessage(jid, '💳 ¿Como deseas pagar?\n\n1️⃣ Transferencia\n2️⃣ Contra entrega' + NAV)
-    }
-    return
-  }
-
+  // ── COMPROBANTE ───────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_COMPROBANTE) {
     if (hasMedia) {
-      await sendMessage(jid, '⏳ Verificando y creando tu pedido...')
-      const orden = await crearPedidoShopify(session, session.pedido.datos || '')
-      setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
-      if (orden) {
-        await sendMessage(jid, '✅ *¡Pago recibido y pedido creado!*\n\n📦 Orden #' + orden.order_number + '\n\nMuy pronto recibirás tu guia de despacho.\n\n¡Gracias por tu compra en BlockBag! 🧳❤️')
-        const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-        for (const num of owners) {
-          await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net',
-            '📸 *Comprobante + Pedido*\nOrden #' + orden.order_number + '\nProducto: ' + session.pedido.diseno + '\nDatos: ' + session.pedido.datos)
-        }
-      } else {
-        await sendMessage(jid, msgPedidoCompleto())
-      }
+      setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
+      await sendMessage(jid, '✅ Comprobante recibido.\n\nAhora envíanos tus datos de envío en un mensaje:\n\n👤 Nombre completo\n🏠 Dirección de entrega\n🏙️ Ciudad\n📱 Teléfono de contacto')
     } else {
-      await sendMessage(jid, '📸 Por favor envia el pantallazo del comprobante para proceder.' + NAV)
+      await sendMessage(jid, '📸 Por favor envíanos el pantallazo del comprobante de pago para proceder.' + NAV)
     }
     return
   }
 
+  // ── DATOS DE ENVIO ────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_DATOS_ENVIO) {
+    if (!texto || texto.trim().length < 5) {
+      await sendMessage(jid, 'Por favor envíanos tus datos completos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono' + NAV)
+      return
+    }
+    const orden = await crearPedidoShopify(session, texto)
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
-    await sendMessage(jid, msgPedidoCompleto())
-    const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-    for (const num of owners) {
-      await sendMessage(num.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net', '📦 Contra entrega\nDatos: ' + texto)
+    if (orden) {
+      await sendMessage(jid, '✅ *¡Pedido creado!*\n\n📦 Orden #' + orden.order_number + '\n\nSandra se pondrá en contacto contigo para coordinar el despacho.\n\n¡Gracias por tu compra en BlockBag! 🧳❤️')
+      await notificarSandra('📦 *NUEVO PEDIDO CONFIRMADO*\n\nOrden #' + orden.order_number + '\nProducto: ' + session.pedido.diseno + '\nDatos: ' + texto + '\nTotal: $' + ((session.pedido.precioTotal || 0) + 15000 + (session.pedido.candado ? 22000 * (session.pedido.numeroCandados || 1) : 0)).toLocaleString('es-CO'))
+    } else {
+      await sendMessage(jid, '✅ Pedido recibido.\n\nSandra se pondrá en contacto contigo para coordinar el despacho.\n\n¡Gracias por tu compra en BlockBag! 🧳❤️')
+      await notificarSandra('📦 *NUEVO PEDIDO*\nProducto: ' + session.pedido.diseno + '\nDatos: ' + texto)
     }
     return
   }
 
+  // ── OPCIONES DEL MENU ─────────────────────────────────────────
   if (t === '1' || t.includes('medida') || t.includes('talla')) {
-    setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
-    await sendImage(jid, process.env.IMG_MEDIDAS_URL,
-      '🧳 *Guia de tallas BlockBag*\n\nSi tienes dudas te derivamos con un asesor.\n\n_Escribe *asesor* para hablar con nosotros_')
+    await enviarGuiaMedidas(jid)
     return
   }
   if (t === '2' || t.includes('material')) {
@@ -382,27 +289,27 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
   if (t === '3' || t.includes('precio') || t.includes('valor') || t.includes('costo')) {
-    await sendMessage(jid, '💰 *Precios BlockBag*\n\n🛍️ Ver catalogo:\n' + CATALOGO_WA + '\n\n*Forros con diseno:* desde $80.000\n*Forros basicos:* desde $60.000\n*Envio nacional:* $15.000\n*Candado de seguridad:* $22.000\n\n*Combos x2:*\nTalla S x2: $100.000\nTalla M x2: $110.000\nTalla L x2: $120.000\n\n*Accesorios:*\nBascula: $25.000\nPortapasaporte RFID: $40.000\nPortapasaporte basico: $20.000\nEtiqueta maleta: $12.000\nProtector ruedas: $25.000' + NAV)
+    await sendMessage(jid, '💰 *Precios BlockBag*\n\n🛍️ Ver catálogo:\n' + CATALOGO_WA + '\n\n*Forros con diseño:* desde $80.000\n*Forros básicos:* desde $60.000\n*Envío nacional:* $15.000\n*Candado de seguridad:* $22.000\n\n*Combos x2:*\nTalla S x2: $100.000\nTalla M x2: $110.000\nTalla L x2: $120.000\n\n*Accesorios:*\nBáscula: $25.000\nPortapasaporte RFID: $40.000\nPortapasaporte básico: $20.000\nEtiqueta maleta: $12.000\nProtector ruedas: $25.000' + NAV)
     return
   }
-  if (t === '4' || t.includes('envio') || t.includes('envío') || t.includes('despacho') || t.includes('entrega')) {
+  if (t === '4' || t.includes('envio') || t.includes('envío') || t.includes('despacho')) {
     await sendMessage(jid, msgEnvios() + NAV)
     return
   }
-  if (t === '5' || t.includes('forma de pago')) {
+  if (t === '5' || t.includes('forma de pago') || t.includes('como pago') || t.includes('cómo pago')) {
     const day = new Date().getDate()
     const imgUrl = day <= 15 ? process.env.PAGO_Q1_IMAGEN_URL : process.env.PAGO_Q2_IMAGEN_URL
-    await sendImage(jid, imgUrl, msgPagosDinamicos() + NAV)
+    await sendImage(jid, imgUrl, msgPagosDinamicosLocal() + NAV)
     return
   }
   if (t === '6' || t.includes('catalogo') || t.includes('catálogo')) {
-    await sendMessage(jid, '🛍️ *Catalogo BlockBag*\n\nVe todos nuestros productos con fotos y precios:\n\n' + CATALOGO_WA + '\n\nAgrega lo que quieras al carrito y envialo directamente desde el catalogo 👇' + NAV)
+    await sendMessage(jid, '🛍️ *Catálogo BlockBag*\n\nVe todos nuestros productos con fotos y precios:\n\n' + CATALOGO_WA + '\n\nAgrega lo que quieras al carrito y envíanoslo directamente desde el catálogo 👇' + NAV)
     return
   }
 
-  // Mensaje fuera de contexto — derivar a asesor
+  // ── MENSAJE FUERA DE CONTEXTO ─────────────────────────────────
   await sendMessage(jid, '👤 Enseguida te derivamos con un asesor que te ayudará.\n\n_Escribe *opciones* si deseas ver el menú_')
-  await notificarAsesor(jid.replace('@s.whatsapp.net', ''))
+  await notificarSandra('🔔 *Cliente con consulta sin resolver*\nNumero: ' + jid.replace('@s.whatsapp.net', '') + '\nMensaje: ' + texto)
 }
 
 function verificarShopify(req, res, next) {
