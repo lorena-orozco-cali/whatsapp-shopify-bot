@@ -100,6 +100,12 @@ async function notificarSandra(msg) {
 
 async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   const t = (texto || '').trim().toLowerCase()
+
+  // ── IGNORAR MENSAJES DEL DUEÑO ────────────────────────────────
+  const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
+  const esOwner = owners.some(num => jid.includes(num.trim().replace(/[^0-9]/g, '')))
+  if (esOwner) return
+
   const session = getSession(jid)
 
   // ── CARRITO DE WHATSAPP ──────────────────────────────────────
