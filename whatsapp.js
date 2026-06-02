@@ -33,10 +33,16 @@ async function connectToWhatsApp() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
     for (const msg of messages) {
-      if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us') || msg.key.remoteJid.includes('@lid')) continue
+      if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us')) continue
       const remoteJid = msg.key.remoteJid
+      // Filtrar owners por numero normal
       const ownerNums = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean).map(n => n.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net')
-      if (ownerNums.includes(remoteJid)) { console.log('IGNORANDO OWNER:', remoteJid); continue }
+      // Filtrar owners por @lid especifico
+      const ownerLids = (process.env.OWNER_LIDS || '').split(',').filter(Boolean).map(n => n.trim() + '@lid')
+      if (ownerNums.includes(remoteJid) || ownerLids.includes(remoteJid)) {
+        console.log('IGNORANDO OWNER:', remoteJid)
+        continue
+      }
       const msgId = msg.key.id
       if (procesando.has(msgId)) continue
       procesando.add(msgId)
