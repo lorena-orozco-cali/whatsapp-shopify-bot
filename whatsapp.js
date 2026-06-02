@@ -34,15 +34,18 @@ async function connectToWhatsApp() {
     if (type !== 'notify') return
     for (const msg of messages) {
       if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us')) continue
-      console.log('MENSAJE DE:', msg.key.remoteJid)
+      const remoteJid = msg.key.remoteJid
+      // Filtrar owners por numero normal (@s.whatsapp.net)
       const ownerNums = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean).map(n => n.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net')
-      console.log('JID:', msg.key.remoteJid, 'OWNERS:', ownerNums)
-      if (ownerNums.includes(msg.key.remoteJid)) { console.log('IGNORANDO OWNER'); continue }
+      // Filtrar owners por @lid
+      const ownerLids = (process.env.OWNER_LIDS || '').split(',').filter(Boolean).map(n => n.trim() + '@lid')
+      const esOwner = ownerNums.includes(remoteJid) || ownerLids.includes(remoteJid)
+      if (esOwner) { console.log('IGNORANDO OWNER:', remoteJid); continue }
       const msgId = msg.key.id
       if (procesando.has(msgId)) continue
       procesando.add(msgId)
       setTimeout(() => procesando.delete(msgId), 30000)
-      const jid = msg.key.remoteJid
+      const jid = remoteJid
       const ordenMsg = msg.message?.orderMessage
       if (ordenMsg) {
         console.log('CARRITO RECIBIDO:', JSON.stringify(ordenMsg, null, 2))
