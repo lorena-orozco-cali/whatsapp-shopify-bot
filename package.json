@@ -4,7 +4,7 @@
   "description": "WhatsApp automation server for Shopify",
   "main": "index.js",
   "scripts": {
-   "start": "node index.js",
+    "start": "node index.js",
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
@@ -14,7 +14,8 @@
     "pino": "^8.17.2",
     "axios": "^1.6.5",
     "dotenv": "^16.3.1",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "mongodb": "^6.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
