@@ -35,7 +35,8 @@ async function connectToWhatsApp() {
     for (const msg of messages) {
       if (msg.key.fromMe || msg.key.remoteJid.includes('@g.us')) continue
       const ownerNums = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean).map(n => n.trim().replace(/[^0-9]/g, '') + '@s.whatsapp.net')
-      if (ownerNums.includes(msg.key.remoteJid)) continue
+      console.log('JID:', msg.key.remoteJid, 'OWNERS:', ownerNums)
+      if (ownerNums.includes(msg.key.remoteJid)) { console.log('IGNORANDO OWNER'); continue }
       const msgId = msg.key.id
       if (procesando.has(msgId)) continue
       procesando.add(msgId)
