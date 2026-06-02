@@ -1,76 +1,24 @@
-const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, BufferJSON, initAuthCreds, proto } = require('@whiskeysockets/baileys')
-const { MongoClient } = require('mongodb')
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys')
 const pino = require('pino')
+const path = require('path')
 const https = require('https')
 const http = require('http')
-
 let sock = null
 let qrCode = null
 let connectionStatus = 'disconnected'
 let messageHandler = null
 let procesando = new Set()
 const logger = pino({ level: 'silent' })
-
 function setMessageHandler(fn) { messageHandler = fn }
-
-async function getMongoAuthState(mongoUri) {
-  const client = new MongoClient(mongoUri)
-  await client.connect()
-  const collection = client.db('baileys_sessions').collection('blockbag')
-
-  const write = async (data, id) => {
-    await collection.updateOne({ _id: id }, { $set: { data: JSON.stringify(data, BufferJSON.replacer) } }, { upsert: true })
-  }
-  const read = async (id) => {
-    const doc = await collection.findOne({ _id: id })
-    return doc ? JSON.parse(doc.data, BufferJSON.reviver) : null
-  }
-  const remove = async (id) => { await collection.deleteOne({ _id: id }) }
-
-  const creds = (await read('creds')) || initAuthCreds()
-
-  return {
-    state: {
-      creds,
-      keys: {
-        get: async (type, ids) => {
-          const data = {}
-          await Promise.all(ids.map(async id => {
-            let value = await read(`${type}-${id}`)
-            if (type === 'app-state-sync-key' && value) value = proto.Message.AppStateSyncKeyData.fromObject(value)
-            data[id] = value
-          }))
-          return data
-        },
-        set: async (data) => {
-          const tasks = []
-          for (const category of Object.keys(data)) {
-            for (const id of Object.keys(data[category])) {
-              const value = data[category][id]
-              tasks.push(value ? write(value, `${category}-${id}`) : remove(`${category}-${id}`))
-            }
-          }
-          await Promise.all(tasks)
-        }
-      }
-    },
-    saveCreds: () => write(creds, 'creds')
-  }
-}
-
 async function connectToWhatsApp() {
+  const { state, saveCreds } = await useMultiFileAuthState(process.env.SESSION_PATH || path.join(__dirname, 'sessions'))
   const { version } = await fetchLatestBaileysVersion()
-  const { state, saveCreds } = await getMongoAuthState(process.env.MONGODB_URI)
-  console.log('Sesion MongoDB lista')
-
   sock = makeWASocket({
     version, logger, auth: state,
     browser: ['BlockBagBot', 'Chrome', '120.0.0'],
     connectTimeoutMs: 60000, defaultQueryTimeoutMs: 60000, keepAliveIntervalMs: 25000,
   })
-
   sock.ev.on('creds.update', saveCreds)
-
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update
     if (qr) { qrCode = qr; connectionStatus = 'qr_ready'; console.log('QR listo') }
@@ -82,7 +30,6 @@ async function connectToWhatsApp() {
       else { connectionStatus = 'logged_out'; console.log('Sesion cerrada') }
     }
   })
-
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return
     for (const msg of messages) {
@@ -110,7 +57,6 @@ async function connectToWhatsApp() {
   })
   return sock
 }
-
 async function sendMessage(jid, text) {
   if (!sock || connectionStatus !== 'connected') return
   await sock.sendMessage(jid, { text })
