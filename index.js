@@ -66,8 +66,10 @@ const STATES = {
   ESPERANDO_COMPROBANTE: 'ESPERANDO_COMPROBANTE',
   ESPERANDO_DATOS_ENVIO: 'ESPERANDO_DATOS_ENVIO',
   ESPERANDO_NUMERO_ASESOR: 'ESPERANDO_NUMERO_ASESOR',
+  EN_ASESOR: 'EN_ASESOR',
 }
 
+const MINUTOS_ASESOR = 20
 const NAV = '\n\n_Escribe *opciones* para ver el menu o *asesor* para hablar con nosotros_'
 
 function getSession(jid) {
@@ -100,13 +102,21 @@ async function notificarSandra(msg) {
 
 async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   const t = (texto || '').trim().toLowerCase()
-
-  // ── IGNORAR MENSAJES DEL DUEÑO ────────────────────────────────
-  const owners = (process.env.OWNER_NUMBERS || '').split(',').filter(Boolean)
-  const esOwner = owners.some(num => jid.includes(num.trim().replace(/[^0-9]/g, '')))
-  if (esOwner) return
-
   const session = getSession(jid)
+
+  // ── EN ASESOR: bot pausado por 20 minutos ─────────────────────
+  if (session.state === STATES.EN_ASESOR) {
+    const ahora = Date.now()
+    const tiempoAsesor = session.asesorDesde || ahora
+    const minutosTranscurridos = (ahora - tiempoAsesor) / 60000
+    if (minutosTranscurridos < MINUTOS_ASESOR) {
+      // Bot pausado, no responde
+      return
+    } else {
+      // Pasaron 20 minutos, reactivar bot
+      setSession(jid, { state: STATES.MENU, pedido: { candado: false }, asesorDesde: null })
+    }
+  }
 
   // ── CARRITO DE WHATSAPP ──────────────────────────────────────
   if (texto === '__CARRITO__' && ordenMsg) {
@@ -159,7 +169,7 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
       await sendMessage(jid, 'Por favor escríbenos tu número de celular.\n\nEjemplo: *3001234567*')
       return
     }
-    setSession(jid, { state: STATES.MENU })
+    setSession(jid, { state: STATES.EN_ASESOR, asesorDesde: Date.now(), pedido: { candado: false } })
     await sendMessage(jid, '✅ Un asesor te contactará pronto. Gracias 🙏')
     await notificarSandra('🔔 *ALERTA: Cliente solicita asesor*\n\nNumero: ' + nums.join('') + '\n\nBusca este contacto en el chat de BlockBag.')
     return
