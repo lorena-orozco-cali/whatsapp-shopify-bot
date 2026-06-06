@@ -110,10 +110,8 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     const tiempoAsesor = session.asesorDesde || ahora
     const minutosTranscurridos = (ahora - tiempoAsesor) / 60000
     if (minutosTranscurridos < MINUTOS_ASESOR) {
-      // Bot pausado, no responde
       return
     } else {
-      // Pasaron 20 minutos, reactivar bot
       setSession(jid, { state: STATES.MENU, pedido: { candado: false }, asesorDesde: null })
     }
   }
@@ -133,16 +131,13 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     const precioCandados = 22000 * cantidadItems
     const totalSinCandado = precioTotal + 15000
     const totalConCandado = precioTotal + 15000 + precioCandados
-
     setSession(jid, {
       state: STATES.OFERTA_CANDADO,
       pedido: { ...session.pedido, diseno: nombresProductos, precioTotal, cantidadItems, variantId: items[0]?.productId || null }
     })
-
     const msgCandado = cantidadItems > 1
       ? '🔒 ¿Deseas incluir *' + cantidadItems + ' candados* de seguridad ($22.000 c/u = $' + precioCandados.toLocaleString('es-CO') + ')?\n\nResponde *si*, *no*, o el número que deseas (ej: *2*)'
       : '🔒 ¿Deseas incluir el candado de seguridad ($22.000)?\n\nResponde *si* o *no*'
-
     await sendMessage(jid,
       '🛒 *¡Recibimos tu pedido!*\n\n📦 *' + nombresProductos + '*\n🔢 Cantidad: ' + cantidadItems + '\n\n💰 *Resumen:*\nProductos: $' + precioTotal.toLocaleString('es-CO') + '\nEnvío: $15.000\nCandado' + (cantidadItems > 1 ? 's' : '') + ' (opcional): $' + precioCandados.toLocaleString('es-CO') + '\n\n*Total sin candado: $' + totalSinCandado.toLocaleString('es-CO') + '*\n*Total con candado: $' + totalConCandado.toLocaleString('es-CO') + '*\n\n' + msgCandado + NAV)
     return
@@ -180,11 +175,9 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     t.includes('maleta grande') || t.includes('maleta pequeña') || t.includes('maleta peque') ||
     t.includes('qué talla') || t.includes('que talla') || t.includes('tamaño') ||
     t.includes('dimensi') || (t.includes('medida') && !session.state.includes('ESPERANDO'))
-
   if (esDimension) {
     if (t.includes('cabina') || t.includes('carry')) {
-      await sendImage(jid, process.env.IMG_MEDIDAS_URL,
-        '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
+      await sendImage(jid, process.env.IMG_MEDIDAS_URL, '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
     } else {
       await enviarGuiaMedidas(jid)
     }
@@ -193,8 +186,7 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
 
   // ── PREGUNTA MALETA DE CABINA ─────────────────────────────────
   if (t.includes('cabina') || t.includes('carry on') || t.includes('carry-on')) {
-    await sendImage(jid, process.env.IMG_MEDIDAS_URL,
-      '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
+    await sendImage(jid, process.env.IMG_MEDIDAS_URL, '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
     return
   }
 
@@ -215,8 +207,7 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   // ── PERSONALIZACION ───────────────────────────────────────────
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
-    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL,
-      '🎨 *Personalización BlockBag*\n\nTiempo de entrega: *8 a 10 días hábiles*.\n\nIndícanos qué diseño quieres y en qué parte de la maleta.\n\nEscríbenos todos los detalles 👇' + NAV)
+    await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, '🎨 *Personalización BlockBag*\n\nTiempo de entrega: *8 a 10 días hábiles*.\n\nIndícanos qué diseño quieres y en qué parte de la maleta.\n\nEscríbenos todos los detalles 👇' + NAV)
     return
   }
 
@@ -234,10 +225,8 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     const mNum = t.match(/\d+/)
     if (mNum) candadosN = parseInt(mNum[0])
     else { for (const [w, n] of Object.entries(numWords)) { if (t.includes(w)) { candadosN = n; break } } }
-
     const quiere = ['si', 'sí', 'claro', 'dale', 'yes'].some(r => t === r || t.startsWith(r))
     const noQuiere = t === 'no' || t === 'no gracias'
-
     if (candadosN !== null && !quiere && !noQuiere) {
       const pc = 22000 * candadosN
       const tot = (session.pedido.precioTotal || 0) + 15000 + pc
@@ -248,7 +237,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
       await sendImage(jid, imgUrl, msgPagosDinamicosLocal())
       return
     }
-
     if (quiere || noQuiere) {
       const numeroCandados = quiere ? (session.pedido.cantidadItems || 1) : 0
       const pc = 22000 * numeroCandados
@@ -261,7 +249,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
       await sendImage(jid, imgUrl, msgPagosDinamicosLocal())
       return
     }
-
     await sendMessage(jid, '¿Deseas incluir el candado de seguridad?\n\nResponde *si*, *no*, o el número que deseas (ej: *2*)' + NAV)
     return
   }
@@ -296,22 +283,13 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   }
 
   // ── OPCIONES DEL MENU ─────────────────────────────────────────
-  if (t === '1' || t.includes('medida') || t.includes('talla')) {
-    await enviarGuiaMedidas(jid)
-    return
-  }
-  if (t === '2' || t.includes('material')) {
-    await sendMessage(jid, msgMateriales() + NAV)
-    return
-  }
+  if (t === '1' || t.includes('medida') || t.includes('talla')) { await enviarGuiaMedidas(jid); return }
+  if (t === '2' || t.includes('material')) { await sendMessage(jid, msgMateriales() + NAV); return }
   if (t === '3' || t.includes('precio') || t.includes('valor') || t.includes('costo')) {
     await sendMessage(jid, '💰 *Precios BlockBag*\n\n🛍️ Ver catálogo:\n' + CATALOGO_WA + '\n\n*Forros con diseño:* desde $80.000\n*Forros básicos:* desde $60.000\n*Envío nacional:* $15.000\n*Candado de seguridad:* $22.000\n\n*Combos x2:*\nTalla S x2: $100.000\nTalla M x2: $110.000\nTalla L x2: $120.000\n\n*Accesorios:*\nBáscula: $25.000\nPortapasaporte RFID: $40.000\nPortapasaporte básico: $20.000\nEtiqueta maleta: $12.000\nProtector ruedas: $25.000' + NAV)
     return
   }
-  if (t === '4' || t.includes('envio') || t.includes('envío') || t.includes('despacho')) {
-    await sendMessage(jid, msgEnvios() + NAV)
-    return
-  }
+  if (t === '4' || t.includes('envio') || t.includes('envío') || t.includes('despacho')) { await sendMessage(jid, msgEnvios() + NAV); return }
   if (t === '5' || t.includes('forma de pago') || t.includes('como pago') || t.includes('cómo pago')) {
     const day = new Date().getDate()
     const imgUrl = day <= 15 ? process.env.PAGO_Q1_IMAGEN_URL : process.env.PAGO_Q2_IMAGEN_URL
@@ -323,9 +301,8 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── MENSAJE FUERA DE CONTEXTO ─────────────────────────────────
+  // ── MENSAJE FUERA DE CONTEXTO — sin notificar a Sandra ────────
   await sendMessage(jid, '👤 Enseguida te derivamos con un asesor que te ayudará.\n\n_Escribe *opciones* si deseas ver el menú_')
-  await notificarSandra('🔔 *Cliente con consulta sin resolver*\nNumero: ' + jid.replace('@s.whatsapp.net', '') + '\nMensaje: ' + texto)
 }
 
 function verificarShopify(req, res, next) {
@@ -344,7 +321,6 @@ app.get('/', (req, res) => {
   const { status } = getStatus()
   res.send('<html><head><title>BlockBag Bot</title><meta http-equiv="refresh" content="5"><style>body{font-family:sans-serif;text-align:center;padding:40px;background:#f0f2f5}h1{color:#075E54}.status{padding:12px 24px;border-radius:20px;display:inline-block;font-weight:bold}.connected{background:#d4edda;color:#155724}.disconnected{background:#fff3cd;color:#856404}</style></head><body><h1>BlockBag WhatsApp Bot</h1><p class="status ' + (status === 'connected' ? 'connected' : 'disconnected') + '">' + (status === 'connected' ? 'Conectado' : status === 'qr_ready' ? 'Escanea el QR en /qr' : 'Conectando...') + '</p>' + (status !== 'connected' ? '<p><a href="/qr">Ver codigo QR</a></p>' : '') + '</body></html>')
 })
-
 app.get('/qr', async (req, res) => {
   const { status, qr } = getStatus()
   if (status === 'connected') return res.send('<h2 style="font-family:sans-serif;color:green;text-align:center">Ya conectado</h2>')
@@ -352,7 +328,6 @@ app.get('/qr', async (req, res) => {
   const img = await QRCode.toDataURL(qr, { width: 300 })
   res.send('<html><head><title>QR</title><meta http-equiv="refresh" content="30"></head><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>Escanea con WhatsApp</h2><img src="' + img + '" style="border:4px solid #075E54;border-radius:12px"/></body></html>')
 })
-
 app.post('/webhook/orders/create', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgPedidoNuevo(order)) } catch (e) { console.error(e.message) } })
 app.post('/webhook/orders/paid', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; await sendMessage(phone + '@s.whatsapp.net', msgPagoConfirmado(order)) } catch (e) { console.error(e.message) } })
 app.post('/webhook/orders/fulfilled', verificarShopify, async (req, res) => { res.sendStatus(200); try { const order = req.body; const phone = limpiarTelefono(order.billing_address?.phone || order.phone); if (!phone) return; const tr = order.fulfillments?.[0] || {}; await sendMessage(phone + '@s.whatsapp.net', msgEnvioDespachado(order, { number: tr.tracking_number, company: tr.tracking_company, url: tr.tracking_url })) } catch (e) { console.error(e.message) } })
