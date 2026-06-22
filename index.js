@@ -301,7 +301,8 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── MENSAJE FUERA DE CONTEXTO — sin notificar a Sandra ────────
+  // ── MENSAJE FUERA DE CONTEXTO ─────────────────────────────────
+  setSession(jid, { state: STATES.EN_ASESOR, asesorDesde: Date.now() })
   await sendMessage(jid, '👤 Enseguida te derivamos con un asesor que te ayudará.\n\n_Escribe *opciones* si deseas ver el menú_')
 }
 
