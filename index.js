@@ -104,7 +104,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // ── EN ASESOR: bot pausado por 20 minutos ─────────────────────
   if (session.state === STATES.EN_ASESOR) {
     const ahora = Date.now()
     const tiempoAsesor = session.asesorDesde || ahora
@@ -116,7 +115,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     }
   }
 
-  // ── CARRITO DE WHATSAPP ──────────────────────────────────────
   if (texto === '__CARRITO__' && ordenMsg) {
     const items = ordenMsg.products || []
     const cantidadItems = ordenMsg.itemCount || items.length || 1
@@ -143,7 +141,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── MENU Y SALUDO ─────────────────────────────────────────────
   if (t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start' ||
       t === 'hola' || t === 'hi' || t === 'buenas' || t.includes('menu') || t.includes('opcion')) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
@@ -151,7 +148,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── ASESOR ────────────────────────────────────────────────────
   if (t === '7' || t === 'asesor' || t.includes('asesor') || t.includes('hablar con')) {
     setSession(jid, { state: STATES.ESPERANDO_NUMERO_ASESOR })
     await sendMessage(jid, '👤 *Hablar con un asesor*\n\nPor favor escríbenos tu número de celular.\n\nEjemplo: *3001234567*')
@@ -170,7 +166,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── PREGUNTAS SOBRE DIMENSIONES ───────────────────────────────
   const esDimension = t.includes('kilo') || t.includes('peso') || t.includes('pesa') ||
     t.includes('maleta grande') || t.includes('maleta pequeña') || t.includes('maleta peque') ||
     t.includes('qué talla') || t.includes('que talla') || t.includes('tamaño') ||
@@ -184,27 +179,23 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── PREGUNTA MALETA DE CABINA ─────────────────────────────────
   if (t.includes('cabina') || t.includes('carry on') || t.includes('carry-on')) {
     await sendImage(jid, process.env.IMG_MEDIDAS_URL, '🧳 Las maletas de cabina siempre corresponden a la talla *S* en BlockBag.\n\nElige tu forro en el catálogo:\n\n' + CATALOGO_WA + NAV)
     return
   }
 
-  // ── UBICACIÓN ─────────────────────────────────────────────────
   if (t.includes('ubicad') || t.includes('donde estan') || t.includes('dónde están') ||
       t.includes('donde quedan') || t.includes('donde est') || t.includes('dónde est')) {
     await sendMessage(jid, '📍 Despachamos desde *Cali, Colombia* a todo el país y al exterior.\n\nEl envío nacional tiene un costo de $15.000 🚚' + NAV)
     return
   }
 
-  // ── CONTRA ENTREGA ────────────────────────────────────────────
   if (t.includes('contra entrega') || t.includes('contraentrega') || t.includes('contra-entrega') ||
       (t.includes('contra') && t.includes('entrega')) || t.includes('efectivo')) {
     await sendMessage(jid, '💳 Por el momento solo manejamos pago por *transferencia bancaria* (Llave / Nequi).\n\nCuando tengas tu pedido listo te enviamos los datos de pago.' + NAV)
     return
   }
 
-  // ── PERSONALIZACION ───────────────────────────────────────────
   if (t.includes('personaliz')) {
     setSession(jid, { state: STATES.ESPERANDO_PERSONALIZACION })
     await sendImage(jid, process.env.IMG_PERSONALIZACION_URL, '🎨 *Personalización BlockBag*\n\nTiempo de entrega: *8 a 10 días hábiles*.\n\nIndícanos qué diseño quieres y en qué parte de la maleta.\n\nEscríbenos todos los detalles 👇' + NAV)
@@ -218,7 +209,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── OFERTA CANDADO ────────────────────────────────────────────
   if (session.state === STATES.OFERTA_CANDADO) {
     const numWords = {'uno':1,'dos':2,'tres':3,'cuatro':4,'cinco':5,'seis':6,'siete':7,'ocho':8,'nueve':9,'diez':10}
     let candadosN = null
@@ -253,7 +243,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── COMPROBANTE ───────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_COMPROBANTE) {
     if (hasMedia) {
       setSession(jid, { state: STATES.ESPERANDO_DATOS_ENVIO })
@@ -264,7 +253,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── DATOS DE ENVIO ────────────────────────────────────────────
   if (session.state === STATES.ESPERANDO_DATOS_ENVIO) {
     if (!texto || texto.trim().length < 5) {
       await sendMessage(jid, 'Por favor envíanos tus datos completos:\n\n👤 Nombre completo\n🏠 Dirección\n🏙️ Ciudad\n📱 Teléfono' + NAV)
@@ -282,7 +270,6 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── OPCIONES DEL MENU ─────────────────────────────────────────
   if (t === '1' || t.includes('medida') || t.includes('talla')) { await enviarGuiaMedidas(jid); return }
   if (t === '2' || t.includes('material')) { await sendMessage(jid, msgMateriales() + NAV); return }
   if (t === '3' || t.includes('precio') || t.includes('valor') || t.includes('costo')) {
@@ -301,7 +288,7 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
     return
   }
 
-  // ── MENSAJE FUERA DE CONTEXTO ─────────────────────────────────
+  // ── CATCH-ALL: bot se pausa 20 minutos ───────────────────────
   setSession(jid, { state: STATES.EN_ASESOR, asesorDesde: Date.now() })
   await sendMessage(jid, '👤 Enseguida te derivamos con un asesor que te ayudará.\n\n_Escribe *opciones* si deseas ver el menú_')
 }
