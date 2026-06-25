@@ -106,8 +106,15 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
   const t = (texto || '').trim().toLowerCase()
   const session = getSession(jid)
 
-  // ── FIX PAUTA: mensaje vacío de Meta/Instagram → mostrar menú ─
-  if (!texto && !hasMedia && !ordenMsg) {
+  // ── FIX PAUTA: mensaje vacío O primer contacto desde anuncio Meta ─
+  const esPrimerContacto = !texto && !hasMedia && !ordenMsg
+  const esSaludoPauta = t.includes('quiero') || t.includes('informacion') ||
+    t.includes('información') || t.includes('más info') || t.includes('mas info') ||
+    t.includes('buen') || t.includes('buenas') || t.includes('hola') ||
+    t.includes('hi') || t.includes('hello') || t.includes('info') ||
+    t === 'menu' || t === 'opciones' || t === 'inicio' || t === 'start'
+
+  if (esPrimerContacto || (session.state === STATES.MENU && esSaludoPauta)) {
     setSession(jid, { state: STATES.MENU, pedido: { candado: false } })
     await sendMenu(jid)
     return
@@ -115,8 +122,7 @@ async function handleMessage(jid, texto, hasMedia, ordenMsg) {
 
   // ── COMANDOS GLOBALES: rompen cualquier estado incluyendo EN_ASESOR ──
   const esComandoGlobal = t === 'menu' || t === 'opciones' || t === 'inicio' ||
-    t === 'start' || t === 'hola' || t === 'hi' || t === 'buenas' ||
-    t.includes('menu') || t.includes('opcion')
+    t === 'start' || t.includes('menu') || t.includes('opcion')
 
   // ── EN ASESOR ─────────────────────────────────────────────────
   if (session.state === STATES.EN_ASESOR) {
